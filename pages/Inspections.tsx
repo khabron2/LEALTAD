@@ -48,7 +48,15 @@ export const InspectionsPage: React.FC = () => {
     if(!formData.razonSocial) return alert("Faltan datos");
     
     setLoading(true);
-    await saveInspection(formData as any);
+
+    // Derive boolean flag from selected laws for Dashboard compatibility
+    const isOficio = formData.leyes?.includes("ACTUACIÓN DE OFICIO");
+    const payload = {
+        ...formData,
+        esActuacionDeOficio: isOficio
+    };
+
+    await saveInspection(payload as any);
     setLoading(false);
     setSuccess(true);
     setFormData({
@@ -89,7 +97,8 @@ export const InspectionsPage: React.FC = () => {
     setNewLawInput('');
   };
 
-  const allLaws = [...LEYES_OPTIONS, ...customLaws];
+  // Prepend Special Option
+  const allLaws = ["ACTUACIÓN DE OFICIO", ...LEYES_OPTIONS, ...customLaws];
 
   return (
     <div className="space-y-6">
@@ -122,13 +131,7 @@ export const InspectionsPage: React.FC = () => {
                 
                 <div className="grid grid-cols-2 gap-4">
                     <Input label="Fecha" type="date" value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} required />
-                    <Select 
-                      label="¿Actuación de Oficio?" 
-                      options={[{value: 'NO', label: 'No'}, {value: 'SI', label: 'Si'}]} 
-                      value={formData.esActuacionDeOficio ? 'SI' : 'NO'} 
-                      onChange={e => setFormData({...formData, esActuacionDeOficio: e.target.value === 'SI'})}
-                      className={formData.esActuacionDeOficio ? 'border-brand-primary bg-blue-50' : ''}
-                    />
+                    <Select label="Departamento" options={DEPARTAMENTOS} value={formData.localidad} onChange={e => setFormData({...formData, localidad: e.target.value})} />
                 </div>
 
                 <div>
@@ -154,8 +157,6 @@ export const InspectionsPage: React.FC = () => {
                     <Select label="Inspector 1" options={INSPECTORES} value={formData.inspector1} onChange={e => setFormData({...formData, inspector1: e.target.value})} />
                     <Select label="Inspector 2 (Opcional)" options={INSPECTORES} placeholder="Ninguno" value={formData.inspector2} onChange={e => setFormData({...formData, inspector2: e.target.value})} />
                 </div>
-
-                <Select label="Departamento" options={DEPARTAMENTOS} value={formData.localidad} onChange={e => setFormData({...formData, localidad: e.target.value})} />
             </div>
             
             <div className="mt-6 border-t pt-4">
@@ -166,7 +167,9 @@ export const InspectionsPage: React.FC = () => {
                             key={law}
                             type="button"
                             onClick={() => handleLawToggle(law)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${formData.leyes?.includes(law) ? 'bg-brand-dark text-white border-brand-dark' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${formData.leyes?.includes(law) 
+                                ? (law === "ACTUACIÓN DE OFICIO" ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-brand-dark text-white border-brand-dark')
+                                : (law === "ACTUACIÓN DE OFICIO" ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')}`}
                         >
                             {law}
                         </button>

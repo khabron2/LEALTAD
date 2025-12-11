@@ -60,7 +60,8 @@ export const DashboardPage: React.FC = () => {
     
     // Normalize Target to Local Midnight
     const cleanStr = dateStr.split('T')[0];
-    const [y, m, d] = cleanStr.split('-').map(Number);
+    // Use defaults to ensure y, m, d are treated as numbers (avoids "left-hand side of arithmetic..." error)
+    const [y = 0, m = 0, d = 0] = cleanStr.split('-').map(Number);
     const target = new Date(y, m - 1, d); // Local date constructor
     target.setHours(0,0,0,0);
 
@@ -68,6 +69,7 @@ export const DashboardPage: React.FC = () => {
     const today = new Date();
     today.setHours(0,0,0,0);
 
+    // Use getTime() to ensure numeric subtraction (avoids arithmetic on Date types)
     const diffTime = target.getTime() - today.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
@@ -79,13 +81,24 @@ export const DashboardPage: React.FC = () => {
   const totalActas = infractions.length;
   
   // 2. Notification Subtypes
+  // Fix: Audiencias strict check
   const audienciasCount = notifications.filter(n => n.tipo === NotifType.AUDIENCIA).length;
-  const imputacionesCount = notifications.filter(n => n.tipo === NotifType.IMPUTACION).length;
-  const preventivasCount = notifications.filter(n => n.tipo === NotifType.PREVENTIVA).length;
+  
+  // Fix: Imputaciones includes "AUTO DE IMPUTACIÓN" or just "IMPUTACIÓN"
+  const imputacionesCount = notifications.filter(n => 
+    (n.tipo || '').toUpperCase().includes('IMPUTA')
+  ).length;
+
+  // Fix: Replaced Preventivas with "NOTIFICACIÓN" type count
+  const notificacionesTipoCount = notifications.filter(n => 
+    (n.tipo || '').toUpperCase().includes('NOTIFICACI')
+  ).length;
+
   const trasladosCount = notifications.filter(n => n.tipo === NotifType.TRASLADO).length;
 
   // 3. Inspections / De Oficio
   const totalInspections = inspections.length;
+  // NOTE: "De Oficio" card removed from display as requested, but we still calculate it for potential use
   const totalDeOficio = inspections.filter(i => i.esActuacionDeOficio).length;
 
   // 4. Infringed Laws Stats (Infractions)
@@ -96,8 +109,8 @@ export const DashboardPage: React.FC = () => {
     return acc;
   }, {} as Record<string, number>);
   
-  const sortedLaws = (Object.entries(lawStats) as [string, number][])
-    .sort((a, b) => b[1] - a[1]) // Sort desc by count
+  const sortedLaws = Object.entries(lawStats)
+    .sort((a, b) => (b[1] as number) - (a[1] as number)) // Sort desc by count
     .slice(0, 8); // Top 8
 
   // 5. Chart Data (By Month/Type)
@@ -110,7 +123,20 @@ export const DashboardPage: React.FC = () => {
   const chartData = Object.keys(typeCounts).map(k => ({ name: k.replace('NOTIFICACIÓN ', '').replace('AUTO DE ', ''), value: typeCounts[k] }));
   const COLORS = ['#0A4C83', '#4FA7FF', '#93C5FD', '#1E3A8A'];
 
-  // 6. Alert Logic
+  // 6. Top Companies (Sorted Descending)
+  const companyCounts = notifications.reduce((acc, n) => {
+    const name = n.dirigidoA?.trim();
+    if (name) {
+      acc[name] = (acc[name] || 0) + 1;
+    }
+    return acc;
+  }, {} as Record<string, number>);
+
+  const topCompanies = Object.entries(companyCounts)
+    .sort((a, b) => (b[1] as number) - (a[1] as number)) // Sort by count descending
+    .slice(0, 5);
+
+  // 7. Alert Logic
   const upcomingAudiences = notifications.filter(n => {
     // If it is already notified, remove the alert
     if (n.notificado) return false;
@@ -220,10 +246,13 @@ export const DashboardPage: React.FC = () => {
     const rTotalNotifs = rNotifs.length;
     const rTotalActas = rInfractions.length;
     const rTotalInspections = rInspections.length;
-    const rTotalDeOficio = rInspections.filter(i => i.esActuacionDeOficio).length;
+    const rTotalDeOficio = rInspections.filter(i => i.esActuacionDeOficio).length; // Added for Report
 
     const rAudiencias = rNotifs.filter(n => n.tipo === NotifType.AUDIENCIA).length;
-    const rImputaciones = rNotifs.filter(n => n.tipo === NotifType.IMPUTACION).length;
+    // Update logic for report as well
+    const rImputaciones = rNotifs.filter(n => (n.tipo || '').toUpperCase().includes('IMPUTA')).length;
+    const rNotificacionesTipo = rNotifs.filter(n => (n.tipo || '').toUpperCase().includes('NOTIFICACI')).length;
+    
     const rTotalVencidos = rInfractions.reduce((sum, i) => sum + (i.vencido || 0), 0);
 
     // Calculate Inspection Laws Breakdown
@@ -236,7 +265,7 @@ export const DashboardPage: React.FC = () => {
     const rSortedInspectionLaws = (Object.entries(rInspectionLawStats) as [string, number][])
       .sort((a, b) => b[1] - a[1]);
 
-    // HTML Content
+    // HTML Content - Redesigned for better layout
     const content = `
       <!DOCTYPE html>
       <html>
@@ -246,122 +275,109 @@ export const DashboardPage: React.FC = () => {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
         <style>
            body { font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-           @media print { @page { margin: 1cm; size: A4; } }
+           @media print { 
+             @page { margin: 1cm; size: A4; } 
+             .no-break { break-inside: avoid; }
+           }
         </style>
       </head>
       <body class="bg-white text-gray-800 p-8 max-w-[210mm] mx-auto">
         
         <!-- Header -->
-        <div class="border-b-4 border-blue-900 pb-6 mb-8 flex justify-between items-end">
+        <div class="border-b-4 border-blue-900 pb-4 mb-6 flex justify-between items-end">
           <div>
-            <h1 class="text-3xl font-bold text-blue-900 leading-tight">LEALTAD COMERCIAL</h1>
-            <p class="text-blue-600 font-bold text-sm tracking-widest uppercase mt-1">Ministerio de Industria, Comercio y Empleo</p>
-            <p class="text-gray-500 text-xs uppercase tracking-widest mt-0.5">Provincia de Catamarca</p>
+            <h1 class="text-2xl font-bold text-blue-900 leading-tight">LEALTAD COMERCIAL</h1>
+            <p class="text-blue-600 font-bold text-xs tracking-widest uppercase mt-1">Ministerio de Industria, Comercio y Empleo</p>
+            <p class="text-gray-500 text-[10px] uppercase tracking-widest mt-0.5">Provincia de Catamarca</p>
           </div>
           <div class="text-right">
-             <div class="text-4xl text-gray-200 font-bold mb-1"><svg class="inline-block w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
-             <p class="text-xs text-gray-500 font-medium">Emitido el: ${new Date().toLocaleDateString()}</p>
+             <div class="text-3xl text-gray-200 font-bold mb-1"><svg class="inline-block w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
+             <p class="text-[10px] text-gray-500 font-medium">Emitido: ${new Date().toLocaleDateString()}</p>
           </div>
         </div>
 
         <!-- Title & Summary -->
-        <div class="bg-blue-50 border border-blue-100 rounded-lg p-6 mb-8">
-           <h2 class="text-xl font-bold text-blue-900 mb-3">Informe de Gestión Administrativa</h2>
-           <p class="text-gray-700 text-sm leading-relaxed text-justify">
-             El presente informe detalla las actuaciones realizadas por el <strong>Departamento de Lealtad Comercial</strong>, 
-             abarcando notificaciones, actas de infracción y actuaciones de oficio gestionadas durante el período comprendido entre el 
-             <strong>${formatDateDisplay(rStart)}</strong> y el <strong>${formatDateDisplay(rEnd)}</strong>.
+        <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6 no-break">
+           <h2 class="text-lg font-bold text-blue-900 mb-2">Informe de Gestión Administrativa</h2>
+           <p class="text-gray-700 text-xs leading-relaxed text-justify">
+             Resumen de actuaciones del <strong>Departamento de Lealtad Comercial</strong>, período: 
+             <strong>${formatDateDisplay(rStart)}</strong> al <strong>${formatDateDisplay(rEnd)}</strong>.
            </p>
         </div>
 
         <!-- Key Metrics Grid -->
-        <div class="mb-2 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-2">Métricas Generales</div>
-        <div class="grid grid-cols-4 gap-4 mb-10 mt-6">
-           <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-              <div class="text-2xl font-bold text-blue-900 mb-1">${rTotalNotifs}</div>
-              <div class="text-[10px] text-gray-500 font-semibold uppercase">Notificaciones</div>
+        <div class="mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">Métricas Generales</div>
+        <div class="grid grid-cols-3 gap-4 mb-8 mt-4 no-break">
+           <div class="bg-white p-3 rounded-lg border border-gray-200 shadow-sm text-center">
+              <div class="text-3xl font-bold text-blue-900 mb-1">${rTotalNotifs}</div>
+              <div class="text-[9px] text-gray-500 font-semibold uppercase">Total Notificaciones</div>
            </div>
-           <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-              <div class="text-2xl font-bold text-blue-900 mb-1">${rTotalActas}</div>
-              <div class="text-[10px] text-gray-500 font-semibold uppercase">Actas Infracción</div>
+           <div class="bg-white p-3 rounded-lg border border-gray-200 shadow-sm text-center">
+              <div class="text-3xl font-bold text-blue-900 mb-1">${rTotalActas}</div>
+              <div class="text-[9px] text-gray-500 font-semibold uppercase">Actas Infracción</div>
            </div>
-           <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-              <div class="text-2xl font-bold text-blue-900 mb-1">${rTotalInspections}</div>
-              <div class="text-[10px] text-gray-500 font-semibold uppercase">Total Inspecciones</div>
-           </div>
-           <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-              <div class="text-2xl font-bold text-blue-600 mb-1">${rTotalDeOficio}</div>
-              <div class="text-[10px] text-gray-500 font-semibold uppercase">De Oficio</div>
+           <div class="bg-white p-3 rounded-lg border border-gray-200 shadow-sm text-center">
+              <div class="text-3xl font-bold text-blue-900 mb-1">${rTotalInspections}</div>
+              <div class="text-[9px] text-gray-500 font-semibold uppercase">Total Inspecciones</div>
            </div>
         </div>
 
-        <!-- Breakdown Notificaciones -->
-        <div class="mb-2 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-2">Desglose Operativo (Notificaciones)</div>
-        <div class="grid grid-cols-2 gap-8 mt-6 mb-10">
-            <div class="space-y-4">
-                <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
-                    <span class="font-medium text-gray-700">Audiencias Programadas</span>
-                    <span class="font-bold text-blue-800">${rAudiencias}</span>
-                </div>
-                <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
-                    <span class="font-medium text-gray-700">Autos de Imputación</span>
-                    <span class="font-bold text-blue-800">${rImputaciones}</span>
+        <!-- Breakdown Details -->
+        <div class="grid grid-cols-2 gap-8 mb-8">
+            <!-- Col 1: Notification Types -->
+            <div class="no-break">
+                <div class="mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">Detalle Notificaciones</div>
+                <div class="space-y-2 mt-3">
+                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded border border-gray-100">
+                        <span class="font-medium text-gray-700 text-xs">Audiencias</span>
+                        <span class="font-bold text-blue-800 text-sm">${rAudiencias}</span>
+                    </div>
+                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded border border-gray-100">
+                        <span class="font-medium text-gray-700 text-xs">Imputaciones</span>
+                        <span class="font-bold text-blue-800 text-sm">${rImputaciones}</span>
+                    </div>
+                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded border border-gray-100">
+                        <span class="font-medium text-gray-700 text-xs">Notificaciones</span>
+                        <span class="font-bold text-blue-800 text-sm">${rNotificacionesTipo}</span>
+                    </div>
                 </div>
             </div>
-            <div class="space-y-4">
-                <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
-                    <span class="font-medium text-gray-700">Promedio Diario (Notif.)</span>
-                    <span class="font-bold text-gray-600">${(rTotalNotifs / Math.max(1, (new Date(rEnd).getTime() - new Date(rStart).getTime()) / (1000*60*60*24))).toFixed(1)}</span>
-                </div>
-                 <div class="flex justify-between items-center p-3 bg-red-50 rounded border border-red-100">
-                    <span class="font-medium text-red-800">Productos Vencidos (Actas)</span>
-                    <span class="font-bold text-red-800">${rTotalVencidos}</span>
+
+            <!-- Col 2: Inspection/Infraction Details -->
+            <div class="no-break">
+                <div class="mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">Control y Fiscalización</div>
+                 <div class="space-y-2 mt-3">
+                     <div class="flex justify-between items-center p-2 bg-indigo-50 rounded border border-indigo-100">
+                        <span class="font-medium text-indigo-800 text-xs">Actuaciones de Oficio</span>
+                        <span class="font-bold text-indigo-800 text-sm">${rTotalDeOficio}</span>
+                    </div>
+                     <div class="flex justify-between items-center p-2 bg-red-50 rounded border border-red-100">
+                        <span class="font-medium text-red-800 text-xs">Productos Vencidos (Total)</span>
+                        <span class="font-bold text-red-800 text-sm">${rTotalVencidos}</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Breakdown Inspecciones -->
-        <div class="mb-2 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-2">Desglose de Inspecciones</div>
-        <div class="grid grid-cols-2 gap-8 mt-6 mb-12">
-            <div>
-               <h4 class="font-bold text-blue-900 mb-3 text-sm">Resumen de Actuaciones</h4>
-               <div class="space-y-2">
-                 <div class="flex justify-between items-center p-2 bg-blue-50/50 rounded border border-blue-50">
-                     <span class="text-sm text-gray-700">Total Inspecciones</span>
-                     <span class="font-bold text-brand-primary">${rTotalInspections}</span>
-                 </div>
-                 <div class="flex justify-between items-center p-2 bg-blue-100/50 rounded border border-blue-100">
-                     <span class="text-sm text-gray-700">Actuaciones De Oficio</span>
-                     <span class="font-bold text-blue-800">${rTotalDeOficio}</span>
-                 </div>
-                 <div class="flex justify-between items-center p-2 bg-gray-50 rounded border border-gray-100">
-                     <span class="text-sm text-gray-700">Actuaciones a Requerimiento</span>
-                     <span class="font-bold text-gray-600">${rTotalInspections - rTotalDeOficio}</span>
-                 </div>
-               </div>
-            </div>
-            
-            <div>
-               <h4 class="font-bold text-blue-900 mb-3 text-sm">Control por Leyes (Ranking)</h4>
-               ${rSortedInspectionLaws.length > 0 ? `
-               <div class="grid grid-cols-1 gap-2">
-                   ${rSortedInspectionLaws.map(([law, count]) => `
-                       <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
-                           <span class="font-medium text-gray-700 text-xs uppercase truncate pr-2" title="${law}">${law}</span>
-                           <span class="font-bold text-blue-800">${count}</span>
-                       </div>
-                   `).join('')}
-               </div>
-               ` : '<p class="text-sm text-gray-400 italic">No se registraron leyes en las inspecciones del período.</p>'}
-            </div>
+        <!-- Laws Ranking -->
+        <div class="no-break">
+           <div class="mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">Leyes más Controladas (Ranking)</div>
+           <div class="mt-4 grid grid-cols-2 gap-3">
+               ${rSortedInspectionLaws.length > 0 ? rSortedInspectionLaws.map(([law, count]) => `
+                   <div class="flex justify-between items-center p-2 bg-white rounded border border-gray-200 shadow-sm">
+                       <span class="font-medium text-gray-600 text-[10px] uppercase truncate pr-2" title="${law}">${law}</span>
+                       <span class="font-bold text-blue-900 text-xs">${count}</span>
+                   </div>
+               `).join('') : '<p class="text-xs text-gray-400 italic col-span-2">No se registraron leyes en las inspecciones del período.</p>'}
+           </div>
         </div>
 
         <!-- Footer -->
-        <div class="fixed bottom-12 left-0 right-0 px-12 text-center">
-            <div class="border-t border-gray-300 pt-4 flex justify-between text-[10px] text-gray-400 uppercase">
+        <div class="fixed bottom-0 left-0 right-0 p-8 text-center">
+            <div class="border-t border-gray-300 pt-2 flex justify-between text-[8px] text-gray-400 uppercase">
                 <span>Departamento Lealtad Comercial</span>
-                <span>Sistema de Gestión Interna</span>
-                <span>Página 1 de 1</span>
+                <span>Sistema de Gestión</span>
+                <span>Página 1</span>
             </div>
         </div>
 
@@ -430,7 +446,8 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* 1. Main High Level Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+      {/* Update grid to 4 cols instead of 5 since De Oficio is removed */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {/* Notificaciones Totales */}
         <div className="bg-brand-dark text-white p-5 rounded-xl shadow-lg flex items-center justify-between">
           <div>
@@ -458,14 +475,7 @@ export const DashboardPage: React.FC = () => {
           <div className="bg-blue-50 text-brand-primary p-2 rounded-lg"><ClipboardList size={24} /></div>
         </div>
 
-        {/* De Oficio (Specific Card requested) */}
-        <div className="bg-blue-600 text-white p-5 rounded-xl shadow flex items-center justify-between">
-          <div>
-            <div className="text-3xl font-bold">{totalDeOficio}</div>
-            <div className="text-xs opacity-80 uppercase tracking-wide">De Oficio</div>
-          </div>
-          <div className="bg-white/20 p-2 rounded-lg"><ClipboardCheck size={24} /></div>
-        </div>
+        {/* Removed De Oficio Card */}
 
         {/* Alertas */}
         <div className="bg-brand-warning text-white p-5 rounded-xl shadow flex items-center justify-between">
@@ -490,8 +500,8 @@ export const DashboardPage: React.FC = () => {
              <span className="text-2xl font-bold text-brand-primary">{imputacionesCount}</span>
           </div>
           <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col items-center">
-             <span className="text-sm text-gray-500 mb-1">Preventivas</span>
-             <span className="text-2xl font-bold text-blue-400">{preventivasCount}</span>
+             <span className="text-sm text-gray-500 mb-1">Notificaciones</span>
+             <span className="text-2xl font-bold text-blue-400">{notificacionesTipoCount}</span>
           </div>
           <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col items-center">
              <span className="text-sm text-gray-500 mb-1">Traslados</span>
@@ -672,14 +682,18 @@ export const DashboardPage: React.FC = () => {
           
           <Card title="Top Empresas Notificadas">
              <ul className="divide-y divide-gray-100 text-sm">
-                {Array.from(new Set(notifications.map(n => n.dirigidoA))).slice(0, 5).map((company, i) => (
+                {topCompanies.length > 0 ? (
+                  topCompanies.map(([company, count], i) => (
                     <li key={i} className="py-3 flex justify-between items-center">
-                        <span className="font-medium text-gray-700 truncate w-3/4">{company}</span>
-                        <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-500 text-xs">
-                            {notifications.filter(n => n.dirigidoA === company).length}
+                        <span className="font-medium text-gray-700 truncate w-3/4" title={company}>{company}</span>
+                        <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-500 text-xs font-bold text-brand-dark">
+                            {count}
                         </span>
                     </li>
-                ))}
+                  ))
+                ) : (
+                  <li className="py-4 text-center text-gray-400 italic">No hay datos disponibles</li>
+                )}
              </ul>
           </Card>
         </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, Input, Select, Button, Label } from '../components/UI';
 import { DEPARTAMENTOS, INSPECTORES, LEYES_OPTIONS, InfractionRecord } from '../types';
@@ -5,45 +6,17 @@ import { saveInfraction, getInfractions, getCompanies } from '../services/dataSe
 import { Loader2, CheckCircle, Calculator, Plus, CalendarClock } from 'lucide-react';
 
 // Hardcoded Holidays for Argentina (2024-2025)
-// In a production app, this should ideally come from an API or a config file.
 const ARG_HOLIDAYS = [
   // 2024
-  "2024-01-01", // Año Nuevo
-  "2024-02-12", // Carnaval
-  "2024-02-13", // Carnaval
-  "2024-03-24", // Memoria
-  "2024-03-29", // Viernes Santo
-  "2024-04-01", // Puente Turístico
-  "2024-04-02", // Malvinas
-  "2024-05-01", // Trabajador
-  "2024-05-25", // Revolución de Mayo
-  "2024-06-17", // Güemes
-  "2024-06-20", // Belgrano
-  "2024-06-21", // Puente
-  "2024-07-09", // Independencia
-  "2024-08-17", // San Martín
-  "2024-10-11", // Puente
-  "2024-10-12", // Diversidad Cultural
-  "2024-11-18", // Soberanía (Moved)
-  "2024-12-08", // Inmaculada
-  "2024-12-25", // Navidad
+  "2024-01-01", "2024-02-12", "2024-02-13", "2024-03-24", "2024-03-29", 
+  "2024-04-01", "2024-04-02", "2024-05-01", "2024-05-25", "2024-06-17", 
+  "2024-06-20", "2024-06-21", "2024-07-09", "2024-08-17", "2024-10-11", 
+  "2024-10-12", "2024-11-18", "2024-12-08", "2024-12-25",
   
   // 2025 (Estimated/Fixed)
-  "2025-01-01",
-  "2025-03-03", // Carnaval
-  "2025-03-04", // Carnaval
-  "2025-03-24",
-  "2025-04-02",
-  "2025-04-18", // Viernes Santo
-  "2025-05-01",
-  "2025-05-25",
-  "2025-06-20",
-  "2025-07-09",
-  "2025-08-17",
-  "2025-10-12",
-  "2025-11-20",
-  "2025-12-08",
-  "2025-12-25"
+  "2025-01-01", "2025-03-03", "2025-03-04", "2025-03-24", "2025-04-02",
+  "2025-04-18", "2025-05-01", "2025-05-25", "2025-06-20", "2025-07-09",
+  "2025-08-17", "2025-10-12", "2025-11-20", "2025-12-08", "2025-12-25"
 ];
 
 export const InfractionsPage: React.FC = () => {
@@ -65,7 +38,7 @@ export const InfractionsPage: React.FC = () => {
     decomiso: 0,
     presentoDescargo: false,
     estado: 'Pendiente',
-    fechaActa: new Date().toISOString().split('T')[0]
+    fechaActa: new Date().toISOString().split('T')[0] // Defaults to YYYY-MM-DD
   });
 
   // Calculate next ID on mount
@@ -81,7 +54,7 @@ export const InfractionsPage: React.FC = () => {
       } catch (e) { console.error(e); }
     };
     init();
-  }, [success]); // Re-fetch when a success event happens
+  }, [success]);
 
   // Derived state for multiple selection
   const handleLawToggle = (law: string) => {
@@ -98,56 +71,74 @@ export const InfractionsPage: React.FC = () => {
     if (!newLawInput.trim()) return;
 
     const val = newLawInput.trim().toUpperCase();
-    
-    // Add to custom laws list if not already there and not in default options
     if (!customLaws.includes(val) && !LEYES_OPTIONS.includes(val)) {
       setCustomLaws([...customLaws, val]);
     }
-    
-    // Auto select it
     if (!formData.leyes?.includes(val)) {
       handleLawToggle(val);
     }
-    
     setNewLawInput('');
   };
 
+  // --- Date Calculation Logic (Strict Local Time) ---
   const calculateDeadlines = () => {
     const hasArt5 = formData.leyes?.some(l => l.includes("ART. 5") || l.includes("ART. N° 5"));
     const businessDaysToAdd = hasArt5 ? 5 : 10;
     
-    // Use Fecha de Acta or fallback to today
-    let currentDate = new Date();
-    if (formData.fechaActa) {
-      // Create date explicitly from parts to avoid timezone shifts (YYYY-MM-DD)
-      const [year, month, day] = formData.fechaActa.split('-').map(Number);
-      currentDate = new Date(year, month - 1, day);
+    // 1. Get Start Date (Strictly from input string YYYY-MM-DD)
+    // If empty, fallback to local today string
+    let startStr = formData.fechaActa;
+    if (!startStr) {
+       const today = new Date();
+       const y = today.getFullYear();
+       const m = String(today.getMonth() + 1).padStart(2, '0');
+       const d = String(today.getDate()).padStart(2, '0');
+       startStr = `${y}-${m}-${d}`;
     }
-    
+
+    // 2. Create Cursor Date at 00:00:00 Local Time
+    const [sy, sm, sd] = startStr.split('-').map(Number);
+    const cursor = new Date(sy, sm - 1, sd); 
+
     let daysAdded = 0;
     
-    // Loop until we have added the required number of business days
-    while (daysAdded < businessDaysToAdd) {
-      // Add one day
-      currentDate.setDate(currentDate.getDate() + 1);
+    // 3. Loop business days
+    // Limit loop to prevent infinite crash (e.g. max 60 real days)
+    let safetyCounter = 0;
+    while (daysAdded < businessDaysToAdd && safetyCounter < 60) {
+      safetyCounter++;
       
-      const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 6 = Saturday
-      const dateString = currentDate.toISOString().split('T')[0];
+      // Add 1 day
+      cursor.setDate(cursor.getDate() + 1);
+      
+      const dayOfWeek = cursor.getDay(); // 0 = Sunday, 6 = Saturday
+      
+      // Format current cursor to YYYY-MM-DD for holiday check
+      // Use local getters to avoid UTC shift
+      const cy = cursor.getFullYear();
+      const cm = String(cursor.getMonth() + 1).padStart(2, '0');
+      const cd = String(cursor.getDate()).padStart(2, '0');
+      const dateString = `${cy}-${cm}-${cd}`;
+
       const isHoliday = ARG_HOLIDAYS.includes(dateString);
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-      // Only count if it's not a weekend and not a holiday
       if (!isWeekend && !isHoliday) {
         daysAdded++;
       }
     }
 
-    return { days: businessDaysToAdd, date: currentDate.toISOString().split('T')[0] };
+    // 4. Return Final Date as YYYY-MM-DD String
+    const fy = cursor.getFullYear();
+    const fm = String(cursor.getMonth() + 1).padStart(2, '0');
+    const fd = String(cursor.getDate()).padStart(2, '0');
+    const finalDateStr = `${fy}-${fm}-${fd}`;
+
+    return { days: businessDaysToAdd, date: finalDateStr };
   };
 
   const validateCUIL = (cuil: string) => {
     if (cuil.length !== 11) return false;
-    // Basic length validation for UX, full algo can be added here
     return /^\d+$/.test(cuil);
   };
 
@@ -185,12 +176,11 @@ export const InfractionsPage: React.FC = () => {
          estado: 'Pendiente',
          numeroDigital: '',
          ref: '',
-         fechaActa: new Date().toISOString().split('T')[0],
+         fechaActa: new Date().toISOString().split('T')[0], // Reset to today for next entry
          razonSocial: '',
          fantasia: '',
          cuil: ''
       });
-      // Keep custom laws for session but clear selection
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       alert("Error al guardar");
@@ -201,6 +191,12 @@ export const InfractionsPage: React.FC = () => {
 
   const deadlines = calculateDeadlines();
   const allLaws = [...LEYES_OPTIONS, ...customLaws];
+
+  // Helper to display YYYY-MM-DD as DD/MM/YYYY without timezone conversion
+  const formatDateDisplay = (ymd: string) => {
+      const [y, m, d] = ymd.split('-');
+      return `${d}/${m}/${y}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -321,7 +317,11 @@ export const InfractionsPage: React.FC = () => {
                </div>
                <div>
                  <h4 className="font-bold text-brand-dark">Cálculo Automático (Días Hábiles)</h4>
-                 <p className="text-sm text-gray-500">Considera fines de semana y feriados nacionales.</p>
+                 <p className="text-sm text-gray-500">
+                    Calculado desde: <strong>{formatDateDisplay(formData.fechaActa || '')}</strong>
+                    <br/>
+                    Considera fines de semana y feriados nacionales.
+                 </p>
                </div>
             </div>
             <div className="flex gap-8 text-center">
@@ -331,7 +331,7 @@ export const InfractionsPage: React.FC = () => {
               </div>
               <div>
                 <div className="text-xs text-gray-500 uppercase font-bold">Fecha Límite</div>
-                <div className="text-2xl font-bold text-brand-primary">{new Date(deadlines.date.split('-').map(Number).join('/')).toLocaleDateString()}</div>
+                <div className="text-2xl font-bold text-brand-primary">{formatDateDisplay(deadlines.date)}</div>
               </div>
             </div>
           </div>
