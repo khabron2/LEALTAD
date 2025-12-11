@@ -4,7 +4,7 @@ import { Card, Input, Button, Select } from '../components/UI';
 import { getNotifications, getInfractions, updateNotification, deleteNotification, seedData, getInspections } from '../services/dataService';
 import { NotificationRecord, InfractionRecord, InspectionRecord, INSPECTORES, NotifType } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { AlertTriangle, Calendar, Search, Edit2, Save, X, FileText, Gavel, Truck, AlertCircle, Trash2, Loader2, Printer, ClipboardCheck } from 'lucide-react';
+import { AlertTriangle, Calendar, Search, Edit2, Save, X, FileText, Gavel, Truck, AlertCircle, Trash2, Loader2, Printer, ClipboardCheck, ClipboardList } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
@@ -54,7 +54,7 @@ export const DashboardPage: React.FC = () => {
   const totalInspections = inspections.length;
   const totalDeOficio = inspections.filter(i => i.esActuacionDeOficio).length;
 
-  // 4. Infringed Laws Stats
+  // 4. Infringed Laws Stats (Infractions)
   const lawStats = infractions.flatMap(i => i.leyes || []).reduce((acc, law) => {
     // Normalize string to avoid duplicates with casing issues
     const normalizedLaw = law.trim(); 
@@ -200,6 +200,16 @@ export const DashboardPage: React.FC = () => {
     const rImputaciones = rNotifs.filter(n => n.tipo === NotifType.IMPUTACION).length;
     const rTotalVencidos = rInfractions.reduce((sum, i) => sum + (i.vencido || 0), 0);
 
+    // Calculate Inspection Laws Breakdown
+    const rInspectionLawStats = rInspections.flatMap(i => i.leyes || []).reduce((acc, law) => {
+      const normalizedLaw = law.trim(); 
+      acc[normalizedLaw] = (acc[normalizedLaw] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const rSortedInspectionLaws = (Object.entries(rInspectionLawStats) as [string, number][])
+      .sort((a, b) => b[1] - a[1]);
+
     // HTML Content
     const content = `
       <!DOCTYPE html>
@@ -251,17 +261,17 @@ export const DashboardPage: React.FC = () => {
            </div>
            <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
               <div class="text-2xl font-bold text-blue-900 mb-1">${rTotalInspections}</div>
-              <div class="text-[10px] text-gray-500 font-semibold uppercase">Actas Inspección</div>
+              <div class="text-[10px] text-gray-500 font-semibold uppercase">Total Inspecciones</div>
            </div>
            <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-              <div class="text-2xl font-bold text-red-600 mb-1">${rTotalVencidos}</div>
-              <div class="text-[10px] text-gray-500 font-semibold uppercase">Prod. Vencidos</div>
+              <div class="text-2xl font-bold text-blue-600 mb-1">${rTotalDeOficio}</div>
+              <div class="text-[10px] text-gray-500 font-semibold uppercase">De Oficio</div>
            </div>
         </div>
 
-        <!-- Breakdown -->
-        <div class="mb-2 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-2">Desglose Operativo</div>
-        <div class="grid grid-cols-2 gap-8 mt-6 mb-12">
+        <!-- Breakdown Notificaciones -->
+        <div class="mb-2 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-2">Desglose Operativo (Notificaciones)</div>
+        <div class="grid grid-cols-2 gap-8 mt-6 mb-10">
             <div class="space-y-4">
                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
                     <span class="font-medium text-gray-700">Audiencias Programadas</span>
@@ -271,20 +281,52 @@ export const DashboardPage: React.FC = () => {
                     <span class="font-medium text-gray-700">Autos de Imputación</span>
                     <span class="font-bold text-blue-800">${rImputaciones}</span>
                 </div>
-                <div class="flex justify-between items-center p-3 bg-blue-50 rounded border border-blue-100">
-                    <span class="font-medium text-blue-800">Actuaciones de Oficio</span>
-                    <span class="font-bold text-blue-800">${rTotalDeOficio}</span>
-                </div>
             </div>
             <div class="space-y-4">
                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
                     <span class="font-medium text-gray-700">Promedio Diario (Notif.)</span>
                     <span class="font-bold text-gray-600">${(rTotalNotifs / Math.max(1, (end.getTime() - start.getTime()) / (1000*60*60*24))).toFixed(1)}</span>
                 </div>
-                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
-                    <span class="font-medium text-gray-700">Promedio Diario (Actas)</span>
-                    <span class="font-bold text-gray-600">${(rTotalActas / Math.max(1, (end.getTime() - start.getTime()) / (1000*60*60*24))).toFixed(1)}</span>
+                 <div class="flex justify-between items-center p-3 bg-red-50 rounded border border-red-100">
+                    <span class="font-medium text-red-800">Productos Vencidos (Actas)</span>
+                    <span class="font-bold text-red-800">${rTotalVencidos}</span>
                 </div>
+            </div>
+        </div>
+
+        <!-- Breakdown Inspecciones -->
+        <div class="mb-2 text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-2">Desglose de Inspecciones</div>
+        <div class="grid grid-cols-2 gap-8 mt-6 mb-12">
+            <div>
+               <h4 class="font-bold text-blue-900 mb-3 text-sm">Resumen de Actuaciones</h4>
+               <div class="space-y-2">
+                 <div class="flex justify-between items-center p-2 bg-blue-50/50 rounded border border-blue-50">
+                     <span class="text-sm text-gray-700">Total Inspecciones</span>
+                     <span class="font-bold text-brand-primary">${rTotalInspections}</span>
+                 </div>
+                 <div class="flex justify-between items-center p-2 bg-blue-100/50 rounded border border-blue-100">
+                     <span class="text-sm text-gray-700">Actuaciones De Oficio</span>
+                     <span class="font-bold text-blue-800">${rTotalDeOficio}</span>
+                 </div>
+                 <div class="flex justify-between items-center p-2 bg-gray-50 rounded border border-gray-100">
+                     <span class="text-sm text-gray-700">Actuaciones a Requerimiento</span>
+                     <span class="font-bold text-gray-600">${rTotalInspections - rTotalDeOficio}</span>
+                 </div>
+               </div>
+            </div>
+            
+            <div>
+               <h4 class="font-bold text-blue-900 mb-3 text-sm">Control por Leyes (Ranking)</h4>
+               ${rSortedInspectionLaws.length > 0 ? `
+               <div class="grid grid-cols-1 gap-2">
+                   ${rSortedInspectionLaws.map(([law, count]) => `
+                       <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
+                           <span class="font-medium text-gray-700 text-xs uppercase truncate pr-2" title="${law}">${law}</span>
+                           <span class="font-bold text-blue-800">${count}</span>
+                       </div>
+                   `).join('')}
+               </div>
+               ` : '<p class="text-sm text-gray-400 italic">No se registraron leyes en las inspecciones del período.</p>'}
             </div>
         </div>
 
@@ -362,7 +404,7 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* 1. Main High Level Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
         {/* Notificaciones Totales */}
         <div className="bg-brand-dark text-white p-5 rounded-xl shadow-lg flex items-center justify-between">
           <div>
@@ -376,12 +418,21 @@ export const DashboardPage: React.FC = () => {
         <div className="bg-white text-brand-dark p-5 rounded-xl shadow border border-gray-100 flex items-center justify-between">
           <div>
             <div className="text-3xl font-bold">{totalActas}</div>
-            <div className="text-xs text-gray-400 uppercase tracking-wide">Actas de Infracción</div>
+            <div className="text-xs text-gray-400 uppercase tracking-wide">Actas Infracción</div>
           </div>
           <div className="bg-blue-50 text-brand-primary p-2 rounded-lg"><Gavel size={24} /></div>
         </div>
         
-        {/* De Oficio */}
+        {/* Inspecciones Totales */}
+        <div className="bg-white text-brand-dark p-5 rounded-xl shadow border border-gray-100 flex items-center justify-between">
+          <div>
+            <div className="text-3xl font-bold">{totalInspections}</div>
+            <div className="text-xs text-gray-400 uppercase tracking-wide">Total Inspecciones</div>
+          </div>
+          <div className="bg-blue-50 text-brand-primary p-2 rounded-lg"><ClipboardList size={24} /></div>
+        </div>
+
+        {/* De Oficio (Specific Card requested) */}
         <div className="bg-blue-600 text-white p-5 rounded-xl shadow flex items-center justify-between">
           <div>
             <div className="text-3xl font-bold">{totalDeOficio}</div>

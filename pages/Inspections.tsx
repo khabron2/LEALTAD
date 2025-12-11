@@ -22,7 +22,10 @@ export const InspectionsPage: React.FC = () => {
     localidad: DEPARTAMENTOS[0],
     leyes: [],
     ref: '',
-    esActuacionDeOficio: false
+    esActuacionDeOficio: false,
+    razonSocial: '',
+    fantasia: '',
+    cuil: ''
   });
 
   // Calculate next ID
@@ -128,8 +131,6 @@ export const InspectionsPage: React.FC = () => {
                     />
                 </div>
 
-                <Input label="CUIL" value={formData.cuil} onChange={e => setFormData({...formData, cuil: e.target.value})} />
-                
                 <div>
                    <Label required>Razón Social</Label>
                    <input 
@@ -144,8 +145,16 @@ export const InspectionsPage: React.FC = () => {
                    </datalist>
                 </div>
 
-                <Input label="Fantasía" value={formData.fantasia} onChange={e => setFormData({...formData, fantasia: e.target.value})} />
-                <Select label="Inspector 1" options={INSPECTORES} value={formData.inspector1} onChange={e => setFormData({...formData, inspector1: e.target.value})} />
+                <div className="grid grid-cols-2 gap-4">
+                    <Input label="Fantasía" value={formData.fantasia} onChange={e => setFormData({...formData, fantasia: e.target.value})} />
+                    <Input label="CUIL" value={formData.cuil} onChange={e => setFormData({...formData, cuil: e.target.value})} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <Select label="Inspector 1" options={INSPECTORES} value={formData.inspector1} onChange={e => setFormData({...formData, inspector1: e.target.value})} />
+                    <Select label="Inspector 2 (Opcional)" options={INSPECTORES} placeholder="Ninguno" value={formData.inspector2} onChange={e => setFormData({...formData, inspector2: e.target.value})} />
+                </div>
+
                 <Select label="Departamento" options={DEPARTAMENTOS} value={formData.localidad} onChange={e => setFormData({...formData, localidad: e.target.value})} />
             </div>
             
