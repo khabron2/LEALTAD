@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, Input, Select, Button, Label } from '../components/UI';
 import { DEPARTAMENTOS, INSPECTORES, LEYES_OPTIONS, InspectionRecord } from '../types';
@@ -19,7 +20,9 @@ export const InspectionsPage: React.FC = () => {
     inspector1: INSPECTORES[0],
     inspector2: '',
     localidad: DEPARTAMENTOS[0],
-    leyes: []
+    leyes: [],
+    ref: '',
+    esActuacionDeOficio: false
   });
 
   // Calculate next ID
@@ -39,7 +42,7 @@ export const InspectionsPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(!formData.actuacion || !formData.razonSocial) return alert("Faltan datos");
+    if(!formData.razonSocial) return alert("Faltan datos");
     
     setLoading(true);
     await saveInspection(formData as any);
@@ -51,11 +54,11 @@ export const InspectionsPage: React.FC = () => {
         inspector2: '',
         localidad: DEPARTAMENTOS[0],
         leyes: [],
-        actuacion: '',
         ref: '',
         razonSocial: '',
         fantasia: '',
-        cuil: ''
+        cuil: '',
+        esActuacionDeOficio: false
     });
     setTimeout(() => setSuccess(false), 3000);
   };
@@ -92,7 +95,7 @@ export const InspectionsPage: React.FC = () => {
             <ClipboardList size={24} />
         </div>
         <div>
-            <h2 className="text-2xl font-bold text-brand-dark">Registro de Inspecciones</h2>
+            <h2 className="text-2xl font-bold text-brand-dark">Actas de Inspección</h2>
             <p className="text-sm text-gray-500">Carga rápida de actuaciones</p>
         </div>
       </div>
@@ -108,15 +111,23 @@ export const InspectionsPage: React.FC = () => {
                     className="bg-gray-100 text-gray-500 font-mono cursor-not-allowed" 
                   />
                   <Input 
-                    label="N° Actuación" 
-                    value={formData.actuacion} 
-                    onChange={e => setFormData({...formData, actuacion: e.target.value})} 
-                    required 
+                    label="N° de Acta" 
+                    value={formData.ref} 
+                    onChange={e => setFormData({...formData, ref: e.target.value})} 
                   />
                 </div>
                 
-                <Input label="Referencia" value={formData.ref} onChange={e => setFormData({...formData, ref: e.target.value})} />
-                <Input label="Fecha" type="date" value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} required />
+                <div className="grid grid-cols-2 gap-4">
+                    <Input label="Fecha" type="date" value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} required />
+                    <Select 
+                      label="¿Actuación de Oficio?" 
+                      options={[{value: 'NO', label: 'No'}, {value: 'SI', label: 'Si'}]} 
+                      value={formData.esActuacionDeOficio ? 'SI' : 'NO'} 
+                      onChange={e => setFormData({...formData, esActuacionDeOficio: e.target.value === 'SI'})}
+                      className={formData.esActuacionDeOficio ? 'border-brand-primary bg-blue-50' : ''}
+                    />
+                </div>
+
                 <Input label="CUIL" value={formData.cuil} onChange={e => setFormData({...formData, cuil: e.target.value})} />
                 
                 <div>

@@ -8,8 +8,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   
   const navItems = [
     { name: 'Notificaciones', path: '/', icon: Bell },
-    { name: 'Actas', path: '/actas', icon: FileText },
-    { name: 'Inspecciones', path: '/inspecciones', icon: ClipboardList },
+    { name: 'Actas de Infracción', path: '/actas', icon: FileText },
+    { name: 'Actas de Inspección', path: '/inspecciones', icon: ClipboardList },
   ];
 
   const closeSidebar = () => setIsSidebarOpen(false);
@@ -45,7 +45,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="p-6 border-b border-blue-800 hidden md:block">
-          <h1 className="text-xl font-bold tracking-wide">GESTIÓN LEGAL</h1>
+          <h1 className="text-xl font-bold tracking-wide">LEALTAD COMERCIAL</h1>
           <p className="text-xs text-blue-200 mt-1">Catamarca</p>
         </div>
         

@@ -2,7 +2,49 @@ import React, { useState, useEffect } from 'react';
 import { Card, Input, Select, Button, Label } from '../components/UI';
 import { DEPARTAMENTOS, INSPECTORES, LEYES_OPTIONS, InfractionRecord } from '../types';
 import { saveInfraction, getInfractions, getCompanies } from '../services/dataService';
-import { Loader2, CheckCircle, Calculator, Plus } from 'lucide-react';
+import { Loader2, CheckCircle, Calculator, Plus, CalendarClock } from 'lucide-react';
+
+// Hardcoded Holidays for Argentina (2024-2025)
+// In a production app, this should ideally come from an API or a config file.
+const ARG_HOLIDAYS = [
+  // 2024
+  "2024-01-01", // Año Nuevo
+  "2024-02-12", // Carnaval
+  "2024-02-13", // Carnaval
+  "2024-03-24", // Memoria
+  "2024-03-29", // Viernes Santo
+  "2024-04-01", // Puente Turístico
+  "2024-04-02", // Malvinas
+  "2024-05-01", // Trabajador
+  "2024-05-25", // Revolución de Mayo
+  "2024-06-17", // Güemes
+  "2024-06-20", // Belgrano
+  "2024-06-21", // Puente
+  "2024-07-09", // Independencia
+  "2024-08-17", // San Martín
+  "2024-10-11", // Puente
+  "2024-10-12", // Diversidad Cultural
+  "2024-11-18", // Soberanía (Moved)
+  "2024-12-08", // Inmaculada
+  "2024-12-25", // Navidad
+  
+  // 2025 (Estimated/Fixed)
+  "2025-01-01",
+  "2025-03-03", // Carnaval
+  "2025-03-04", // Carnaval
+  "2025-03-24",
+  "2025-04-02",
+  "2025-04-18", // Viernes Santo
+  "2025-05-01",
+  "2025-05-25",
+  "2025-06-20",
+  "2025-07-09",
+  "2025-08-17",
+  "2025-10-12",
+  "2025-11-20",
+  "2025-12-08",
+  "2025-12-25"
+];
 
 export const InfractionsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -22,7 +64,8 @@ export const InfractionsPage: React.FC = () => {
     vencido: 0,
     decomiso: 0,
     presentoDescargo: false,
-    estado: 'Pendiente'
+    estado: 'Pendiente',
+    fechaActa: new Date().toISOString().split('T')[0]
   });
 
   // Calculate next ID on mount
@@ -71,13 +114,35 @@ export const InfractionsPage: React.FC = () => {
 
   const calculateDeadlines = () => {
     const hasArt5 = formData.leyes?.some(l => l.includes("ART. 5") || l.includes("ART. N° 5"));
-    const days = hasArt5 ? 5 : 10;
+    const businessDaysToAdd = hasArt5 ? 5 : 10;
     
-    const today = new Date();
-    const deadline = new Date(today);
-    deadline.setDate(today.getDate() + days);
+    // Use Fecha de Acta or fallback to today
+    let currentDate = new Date();
+    if (formData.fechaActa) {
+      // Create date explicitly from parts to avoid timezone shifts (YYYY-MM-DD)
+      const [year, month, day] = formData.fechaActa.split('-').map(Number);
+      currentDate = new Date(year, month - 1, day);
+    }
+    
+    let daysAdded = 0;
+    
+    // Loop until we have added the required number of business days
+    while (daysAdded < businessDaysToAdd) {
+      // Add one day
+      currentDate.setDate(currentDate.getDate() + 1);
+      
+      const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 6 = Saturday
+      const dateString = currentDate.toISOString().split('T')[0];
+      const isHoliday = ARG_HOLIDAYS.includes(dateString);
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-    return { days, date: deadline.toISOString().split('T')[0] };
+      // Only count if it's not a weekend and not a holiday
+      if (!isWeekend && !isHoliday) {
+        daysAdded++;
+      }
+    }
+
+    return { days: businessDaysToAdd, date: currentDate.toISOString().split('T')[0] };
   };
 
   const validateCUIL = (cuil: string) => {
@@ -120,6 +185,7 @@ export const InfractionsPage: React.FC = () => {
          estado: 'Pendiente',
          numeroDigital: '',
          ref: '',
+         fechaActa: new Date().toISOString().split('T')[0],
          razonSocial: '',
          fantasia: '',
          cuil: ''
@@ -138,7 +204,7 @@ export const InfractionsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-brand-dark mb-4">Actas de Infracciones</h2>
+      <h2 className="text-2xl font-bold text-brand-dark mb-4">Actas de Infracción</h2>
       
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -158,7 +224,20 @@ export const InfractionsPage: React.FC = () => {
               />
             </div>
             
-            <Input label="Referencia" value={formData.ref} onChange={e => setFormData({...formData, ref: e.target.value})} />
+            <div className="grid grid-cols-2 gap-4">
+                <Input 
+                  label="N° de Acta" 
+                  value={formData.ref} 
+                  onChange={e => setFormData({...formData, ref: e.target.value})} 
+                  placeholder="Ej: 12345"
+                />
+                <Input 
+                  label="Fecha de Acta" 
+                  type="date"
+                  value={formData.fechaActa} 
+                  onChange={e => setFormData({...formData, fechaActa: e.target.value})} 
+                />
+            </div>
             
             <div className="grid grid-cols-2 gap-4">
                <Select label="Inspector 1" options={INSPECTORES} value={formData.inspector1} onChange={e => setFormData({...formData, inspector1: e.target.value})} />
@@ -238,21 +317,21 @@ export const InfractionsPage: React.FC = () => {
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center mb-4 md:mb-0">
                <div className="bg-brand-primary text-white p-3 rounded-full mr-4">
-                 <Calculator size={24} />
+                 <CalendarClock size={24} />
                </div>
                <div>
-                 <h4 className="font-bold text-brand-dark">Cálculo Automático de Plazos</h4>
-                 <p className="text-sm text-gray-500">Basado en las leyes seleccionadas</p>
+                 <h4 className="font-bold text-brand-dark">Cálculo Automático (Días Hábiles)</h4>
+                 <p className="text-sm text-gray-500">Considera fines de semana y feriados nacionales.</p>
                </div>
             </div>
             <div className="flex gap-8 text-center">
               <div>
-                <div className="text-xs text-gray-500 uppercase font-bold">Días Descargo</div>
-                <div className="text-2xl font-bold text-brand-dark">{deadlines.days}</div>
+                <div className="text-xs text-gray-500 uppercase font-bold">Plazo Legal</div>
+                <div className="text-2xl font-bold text-brand-dark">{deadlines.days} Días</div>
               </div>
               <div>
                 <div className="text-xs text-gray-500 uppercase font-bold">Fecha Límite</div>
-                <div className="text-2xl font-bold text-brand-primary">{new Date(deadlines.date).toLocaleDateString()}</div>
+                <div className="text-2xl font-bold text-brand-primary">{new Date(deadlines.date.split('-').map(Number).join('/')).toLocaleDateString()}</div>
               </div>
             </div>
           </div>

@@ -1,3 +1,4 @@
+
 import { NotificationRecord, InfractionRecord, InspectionRecord, NotifType } from '../types';
 
 // ==================================================================================
@@ -24,11 +25,9 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function apiRequest(action: string, method: 'GET' | 'POST' = 'GET', body?: any) {
   if (!GOOGLE_SCRIPT_URL) throw new Error("No API URL");
   
-  // Google Apps Script Web App handles POSTs better with text/plain to avoid CORS preflight complexities in some envs,
-  // but standard fetch usually works. We'll use no-cors if simple, but we need response.
-  // Standard fetch to GAS Web App requires 'redirect: follow' because GAS redirects to content.
-  
-  const url = `${GOOGLE_SCRIPT_URL}?action=${action}`;
+  // Add timestamp to prevent caching in GET requests
+  const timestamp = new Date().getTime();
+  const url = `${GOOGLE_SCRIPT_URL}?action=${action}&_t=${timestamp}`;
   
   const options: RequestInit = {
     method: method,
@@ -89,12 +88,56 @@ export const saveNotification = async (record: Omit<NotificationRecord, 'id' | '
   return newRecord;
 };
 
+// *** IMPORTANTE PARA EL USUARIO ***
+// Para que 'updateNotification' funcione en Google Sheets, debes agregar este bloque a tu Code.gs:
+/*
+  else if (action === "updateNotification") {
+     result = updateRow(ss, "NOTIFICACIONES", data);
+  }
+  else if (action === "deleteNotification") {
+     result = deleteRow(ss, "NOTIFICACIONES", data.id);
+  }
+
+  // Y esta función auxiliar al final de Code.gs:
+  function updateRow(ss, sheetName, data) {
+    const sheet = ensureSheet(ss, sheetName);
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows[0];
+    
+    // Buscar fila por ID (asumiendo ID en columna 0)
+    let rowIndex = -1;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][0] == data.id) {
+        rowIndex = i + 1; // +1 porque sheet es base-1
+        break;
+      }
+    }
+    
+    if (rowIndex === -1) return { error: "ID no encontrado" };
+    
+    // Actualizar columnas específicas
+    // headers.indexOf busca la columna correcta
+    const setVal = (header, val) => {
+       const colIdx = headers.indexOf(header);
+       if (colIdx > -1) sheet.getRange(rowIndex, colIdx + 1).setValue(val);
+    };
+
+    if (data.ref) setVal("REF.", data.ref);
+    if (data.dirigidoA) setVal("DIRIGIDO A", data.dirigidoA);
+    if (data.fechaAudiencia) setVal("FECHA AUDIENCIA", new Date(data.fechaAudiencia));
+    if (data.notificador) setVal("NOTIFICADOR", data.notificador);
+    if (data.notificado) setVal("NOTIFICADO", new Date(data.notificado));
+    
+    return { success: true };
+  }
+  
+  // Asegúrate de agregar columnas "DE OFICIO" en Inspecciones para soportar el nuevo campo
+*/
+
 export const updateNotification = async (updatedRecord: NotificationRecord): Promise<void> => {
   if (GOOGLE_SCRIPT_URL) {
-    // Note: The basic GAS script provided supports Append. 
-    // For update, the GAS script would need an 'update' action.
-    // For now, we will just alert in cloud mode or implement later.
-    console.warn("Update not fully implemented in basic GAS script");
+    // Enabled API Call
+    await apiRequest('updateNotification', 'POST', updatedRecord);
     return;
   }
 
@@ -105,6 +148,19 @@ export const updateNotification = async (updatedRecord: NotificationRecord): Pro
     current[index] = updatedRecord;
     localStorage.setItem(DB_KEYS.NOTIFICATIONS, JSON.stringify(current));
   }
+};
+
+export const deleteNotification = async (id: number): Promise<void> => {
+  if (GOOGLE_SCRIPT_URL) {
+    // Requires backend support for 'deleteNotification' action
+    await apiRequest('deleteNotification', 'POST', { id });
+    return;
+  }
+
+  await delay(300);
+  const current = await getNotifications();
+  const updated = current.filter(r => r.id !== id);
+  localStorage.setItem(DB_KEYS.NOTIFICATIONS, JSON.stringify(updated));
 };
 
 // --- Infractions ---
@@ -118,7 +174,8 @@ export const getInfractions = async (): Promise<InfractionRecord[]> => {
        vencido: Number(d.vencido),
        decomiso: Number(d.decomiso),
        diasDescargo: Number(d.diasDescargo),
-       leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : d.leyes
+       leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : d.leyes,
+       // Map fechaActa if it comes from the sheet (you need to add 'FECHA ACTA' to header in GAS)
     }));
   }
 
@@ -156,7 +213,8 @@ export const getInspections = async (): Promise<InspectionRecord[]> => {
     return data.map((d: any) => ({
       ...d,
       id: Number(d.id),
-      leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : d.leyes
+      leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : d.leyes,
+      esActuacionDeOficio: d.esActuacionDeOficio === true || d.esActuacionDeOficio === 'SI' || d['DE OFICIO'] === 'SI'
     }));
   }
 
@@ -228,7 +286,7 @@ export const seedData = () => {
         anio: 2024,
         area: "LEALTAD COMERCIAL",
         departamento: "Capital",
-        tipo: "NOTIFICACIÓN AUDIENCIA",
+        tipo: "AUDIENCIA", 
         dirigidoA: "Supermercado X",
         contra: "Juan Perez",
         fechaAudiencia: future.toISOString().split('T')[0],
@@ -242,7 +300,7 @@ export const seedData = () => {
         anio: 2024,
         area: "DEPARTAMENTO JURIDICO",
         departamento: "Valle Viejo",
-        tipo: "NOTIFICACIÓN AUDIENCIA",
+        tipo: "AUDIENCIA", 
         dirigidoA: "Electro Hogar",
         contra: "Maria Lopez",
         fechaAudiencia: farFuture.toISOString().split('T')[0],

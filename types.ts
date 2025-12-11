@@ -1,3 +1,4 @@
+
 export enum Area {
   CONSUMIDOR = "DEFENSA DEL CONSUMIDOR",
   JURIDICO = "DEPARTAMENTO JURIDICO",
@@ -12,7 +13,7 @@ export const DEPARTAMENTOS = [
 ];
 
 export enum NotifType {
-  AUDIENCIA = "NOTIFICACIÓN AUDIENCIA",
+  AUDIENCIA = "AUDIENCIA",
   IMPUTACION = "AUTO DE IMPUTACIÓN",
   PREVENTIVA = "PREVENTIVA",
   TRASLADO = "TRASLADO"
@@ -54,7 +55,8 @@ export interface InfractionRecord {
   id: number;
   numeroDigital: string;
   fechaIngreso: string;
-  ref: string;
+  ref: string; // Used as N° de Acta
+  fechaActa?: string; // New field
   inspector1: string;
   inspector2: string;
   localidad: string;
@@ -73,7 +75,6 @@ export interface InfractionRecord {
 
 export interface InspectionRecord {
   id: number;
-  actuacion: string;
   fecha: string;
   ref: string;
   inspector1: string;
@@ -83,4 +84,5 @@ export interface InspectionRecord {
   fantasia: string;
   cuil: string;
   leyes: string[];
+  esActuacionDeOficio?: boolean;
 }
