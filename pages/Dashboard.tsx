@@ -38,6 +38,40 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
+  // --- HELPERS ---
+
+  // Display date as DD/MM/YYYY without timezone shift
+  const formatDateDisplay = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    // Handle YYYY-MM-DD specifically
+    const cleanStr = dateStr.split('T')[0];
+    const parts = cleanStr.split('-');
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      return `${day}/${month}/${year}`;
+    }
+    // Fallback
+    return cleanStr;
+  };
+
+  // Calculate days diff using Local Midnight to Local Midnight to avoid UTC shifts
+  const getDaysDiff = (dateStr?: string) => {
+    if (!dateStr) return 999;
+    
+    // Normalize Target to Local Midnight
+    const cleanStr = dateStr.split('T')[0];
+    const [y, m, d] = cleanStr.split('-').map(Number);
+    const target = new Date(y, m - 1, d); // Local date constructor
+    target.setHours(0,0,0,0);
+
+    // Normalize Today to Local Midnight
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    const diffTime = target.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
   // --- STATS CALCULATION ---
 
   // 1. General Totals
@@ -77,14 +111,6 @@ export const DashboardPage: React.FC = () => {
   const COLORS = ['#0A4C83', '#4FA7FF', '#93C5FD', '#1E3A8A'];
 
   // 6. Alert Logic
-  const getDaysDiff = (dateStr?: string) => {
-    if (!dateStr) return 999;
-    const today = new Date();
-    const target = new Date(dateStr);
-    const diffTime = target.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
-
   const upcomingAudiences = notifications.filter(n => {
     // If it is already notified, remove the alert
     if (n.notificado) return false;
@@ -170,24 +196,24 @@ export const DashboardPage: React.FC = () => {
   const handleGenerateReport = () => {
     if (!reportRange.start || !reportRange.end) return alert("Seleccione un rango de fechas");
 
-    const start = new Date(reportRange.start);
-    const end = new Date(reportRange.end);
-    end.setHours(23, 59, 59, 999);
+    // String based comparison is safer for Dates (YYYY-MM-DD)
+    const rStart = reportRange.start;
+    const rEnd = reportRange.end;
 
     // Filter Data
     const rNotifs = notifications.filter(n => {
-      const d = new Date(n.fechaIngreso);
-      return d >= start && d <= end;
+      const d = n.fechaIngreso.split('T')[0];
+      return d >= rStart && d <= rEnd;
     });
 
     const rInfractions = infractions.filter(i => {
-      const d = new Date(i.fechaIngreso);
-      return d >= start && d <= end;
+      const d = i.fechaIngreso.split('T')[0];
+      return d >= rStart && d <= rEnd;
     });
 
     const rInspections = inspections.filter(i => {
-      const d = new Date(i.fecha);
-      return d >= start && d <= end;
+      const d = i.fecha.split('T')[0];
+      return d >= rStart && d <= rEnd;
     });
 
     // Calc Stats
@@ -244,7 +270,7 @@ export const DashboardPage: React.FC = () => {
            <p class="text-gray-700 text-sm leading-relaxed text-justify">
              El presente informe detalla las actuaciones realizadas por el <strong>Departamento de Lealtad Comercial</strong>, 
              abarcando notificaciones, actas de infracción y actuaciones de oficio gestionadas durante el período comprendido entre el 
-             <strong>${start.toLocaleDateString()}</strong> y el <strong>${end.toLocaleDateString()}</strong>.
+             <strong>${formatDateDisplay(rStart)}</strong> y el <strong>${formatDateDisplay(rEnd)}</strong>.
            </p>
         </div>
 
@@ -285,7 +311,7 @@ export const DashboardPage: React.FC = () => {
             <div class="space-y-4">
                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
                     <span class="font-medium text-gray-700">Promedio Diario (Notif.)</span>
-                    <span class="font-bold text-gray-600">${(rTotalNotifs / Math.max(1, (end.getTime() - start.getTime()) / (1000*60*60*24))).toFixed(1)}</span>
+                    <span class="font-bold text-gray-600">${(rTotalNotifs / Math.max(1, (new Date(rEnd).getTime() - new Date(rStart).getTime()) / (1000*60*60*24))).toFixed(1)}</span>
                 </div>
                  <div class="flex justify-between items-center p-3 bg-red-50 rounded border border-red-100">
                     <span class="font-medium text-red-800">Productos Vencidos (Actas)</span>
@@ -496,7 +522,7 @@ export const DashboardPage: React.FC = () => {
                          <tr key={n.id} className="border-b last:border-0 hover:bg-yellow-50">
                            <td className="py-3 font-medium">{n.ref}</td>
                            <td>{n.dirigidoA}</td>
-                           <td>{new Date(n.fechaAudiencia!).toLocaleDateString()}</td>
+                           <td>{formatDateDisplay(n.fechaAudiencia)}</td>
                            <td>
                              <span className={`px-2 py-1 rounded text-xs font-bold ${days < 0 ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'}`}>
                                {days < 0 ? 'VENCIDO' : `${days} días`}
@@ -546,7 +572,7 @@ export const DashboardPage: React.FC = () => {
                          <>
                            <td className="p-2"><input className="w-20 border rounded p-1" value={editForm.ref} onChange={e => setEditForm({...editForm, ref: e.target.value})} /></td>
                            <td className="p-2"><input className="w-full border rounded p-1" value={editForm.dirigidoA} onChange={e => setEditForm({...editForm, dirigidoA: e.target.value})} /></td>
-                           <td className="p-2"><input type="date" className="w-full border rounded p-1" value={editForm.fechaAudiencia ? new Date(editForm.fechaAudiencia).toISOString().split('T')[0] : ''} onChange={e => setEditForm({...editForm, fechaAudiencia: e.target.value})} /></td>
+                           <td className="p-2"><input type="date" className="w-full border rounded p-1" value={(editForm.fechaAudiencia || '').split('T')[0]} onChange={e => setEditForm({...editForm, fechaAudiencia: e.target.value})} /></td>
                            <td className="p-2">
                              <select className="border rounded p-1 text-xs" value={editForm.notificador} onChange={e => setEditForm({...editForm, notificador: e.target.value})}>
                                {INSPECTORES.map(i => <option key={i} value={i}>{i}</option>)}
@@ -556,7 +582,7 @@ export const DashboardPage: React.FC = () => {
                              <input 
                                type="date" 
                                className="w-full border border-blue-400 rounded p-1 ring-2 ring-blue-100" 
-                               value={editForm.notificado ? new Date(editForm.notificado).toISOString().split('T')[0] : ''} 
+                               value={(editForm.notificado || '').split('T')[0]} 
                                onChange={e => setEditForm({...editForm, notificado: e.target.value})} 
                              />
                            </td>
@@ -573,9 +599,9 @@ export const DashboardPage: React.FC = () => {
                          <>
                            <td className="p-3 font-medium text-brand-dark">{item.ref}</td>
                            <td className="p-3">{item.dirigidoA}</td>
-                           <td className="p-3 text-gray-500">{item.fechaAudiencia ? new Date(item.fechaAudiencia).toLocaleDateString() : '-'}</td>
+                           <td className="p-3 text-gray-500">{formatDateDisplay(item.fechaAudiencia)}</td>
                            <td className="p-3">{item.notificador}</td>
-                           <td className="p-3 text-gray-500 italic">{item.notificado ? new Date(item.notificado).toLocaleDateString() : '-'}</td>
+                           <td className="p-3 text-gray-500 italic">{formatDateDisplay(item.notificado)}</td>
                            <td className="p-3 flex gap-2 justify-center">
                              <button onClick={() => startEdit(item)} className="p-1.5 text-brand-primary hover:bg-blue-50 rounded transition-colors" title="Editar">
                                <Edit2 size={16} />
