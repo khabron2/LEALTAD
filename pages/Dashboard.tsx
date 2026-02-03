@@ -42,7 +42,7 @@ export const DashboardPage: React.FC = () => {
 
   // Display date as DD/MM/YYYY without timezone shift
   const formatDateDisplay = (dateStr?: string) => {
-    if (!dateStr) return '-';
+    if (!dateStr || dateStr === 'dd/mm/aaaa' || dateStr === '') return '-';
     // Handle YYYY-MM-DD specifically
     const cleanStr = dateStr.split('T')[0];
     const parts = cleanStr.split('-');
@@ -133,7 +133,7 @@ export const DashboardPage: React.FC = () => {
 
   // 7. Alert Logic
   const upcomingAudiences = notifications.filter(n => {
-    if (n.notificado) return false;
+    if (n.notificado && n.notificado !== '') return false;
     if (n.tipo !== NotifType.AUDIENCIA || !n.fechaAudiencia) return false;
     const days = getDaysDiff(n.fechaAudiencia);
     return days <= 12 && days >= -1;
@@ -181,7 +181,7 @@ export const DashboardPage: React.FC = () => {
       setEditForm({});
     } catch (error) {
       console.error("Error al guardar en Drive:", error);
-      alert("Error al guardar en Google Drive. Verifique su conexión y que el script esté correctamente configurado.");
+      alert("Error al guardar en Google Drive. Verifique que el campo de fecha tenga un valor válido.");
     } finally {
       setIsSaving(false);
     }

@@ -45,10 +45,20 @@ async function apiRequest(action: string, method: 'GET' | 'POST' = 'GET', body?:
 export const getNotifications = async (): Promise<NotificationRecord[]> => {
   if (GOOGLE_SCRIPT_URL) {
     const data = await apiRequest('getNotifications');
+    // Mapeo exhaustivo para manejar diferencias de mayúsculas/minúsculas de Drive
     return data.map((d: any) => ({
-      ...d,
-      id: Number(d.id),
-      anio: Number(d.anio || new Date().getFullYear())
+      id: Number(d.id || d.ID),
+      fechaIngreso: d.fechaIngreso || d['FECHA INGRESO'] || '',
+      ref: d.ref || d.REF || '',
+      anio: Number(d.anio || d.ANIO || new Date().getFullYear()),
+      area: d.area || d.AREA || '',
+      departamento: d.departamento || d.DEPARTAMENTO || '',
+      tipo: d.tipo || d.TIPO || '',
+      dirigidoA: d.dirigidoA || d['DIRIGIDO A'] || '',
+      contra: d.contra || d.CONTRA || '',
+      fechaAudiencia: d.fechaAudiencia || d['FECHA AUDIENCIA'] || '',
+      notificador: d.notificador || d.NOTIFICADOR || '',
+      notificado: d.notificado || d.NOTIFICADO || d['FECHA NOTIFICACION'] || ''
     }));
   }
   
@@ -80,9 +90,19 @@ export const saveNotification = async (record: Omit<NotificationRecord, 'id' | '
 
 export const updateNotification = async (updatedRecord: NotificationRecord): Promise<void> => {
   if (GOOGLE_SCRIPT_URL) {
-    // IMPORTANTE: Se devuelve la promesa del apiRequest para que el componente 
-    // sepa si realmente se guardó en Drive antes de actualizar la UI local.
-    const result = await apiRequest('updateNotification', 'POST', updatedRecord);
+    // Enviamos el objeto con las claves originales y en mayúsculas para máxima compatibilidad con el Script
+    const payload = {
+      ...updatedRecord,
+      'ID': updatedRecord.id,
+      'NOTIFICADO': updatedRecord.notificado,
+      'FECHA NOTIFICACION': updatedRecord.notificado,
+      'REF': updatedRecord.ref,
+      'DIRIGIDO A': updatedRecord.dirigidoA,
+      'FECHA AUDIENCIA': updatedRecord.fechaAudiencia,
+      'NOTIFICADOR': updatedRecord.notificador
+    };
+
+    const result = await apiRequest('updateNotification', 'POST', payload);
     if (!result || (result.success === false)) {
       throw new Error("El servidor no pudo confirmar la actualización.");
     }
@@ -117,11 +137,11 @@ export const getInfractions = async (): Promise<InfractionRecord[]> => {
     const data = await apiRequest('getInfractions');
     return data.map((d: any) => ({
        ...d,
-       id: Number(d.id),
-       vencido: Number(d.vencido),
-       decomiso: Number(d.decomiso),
-       diasDescargo: Number(d.diasDescargo),
-       leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : d.leyes,
+       id: Number(d.id || d.ID),
+       vencido: Number(d.vencido || d.VENCIDO || 0),
+       decomiso: Number(d.decomiso || d.DECOMISO || 0),
+       diasDescargo: Number(d.diasDescargo || d['DIAS DESCARGO'] || 0),
+       leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : (d.LEYES || d.leyes || []),
     }));
   }
 
@@ -158,9 +178,9 @@ export const getInspections = async (): Promise<InspectionRecord[]> => {
     const data = await apiRequest('getInspections');
     return data.map((d: any) => ({
       ...d,
-      id: Number(d.id),
-      leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : d.leyes,
-      esActuacionDeOficio: d.esActuacionDeOficio === true || d.esActuacionDeOficio === 'SI' || d['DE OFICIO'] === 'SI'
+      id: Number(d.id || d.ID),
+      leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : (d.LEYES || d.leyes || []),
+      esActuacionDeOficio: d.esActuacionDeOficio === true || d.esActuacionDeOficio === 'SI' || d['DE OFICIO'] === 'SI' || d['ES ACTUACION DE OFICIO'] === 'SI'
     }));
   }
 
