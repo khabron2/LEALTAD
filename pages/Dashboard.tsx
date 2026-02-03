@@ -81,15 +81,12 @@ export const DashboardPage: React.FC = () => {
   const totalActas = infractions.length;
   
   // 2. Notification Subtypes
-  // Fix: Audiencias strict check
   const audienciasCount = notifications.filter(n => n.tipo === NotifType.AUDIENCIA).length;
   
-  // Fix: Imputaciones includes "AUTO DE IMPUTACIÓN" or just "IMPUTACIÓN"
   const imputacionesCount = notifications.filter(n => 
     (n.tipo || '').toUpperCase().includes('IMPUTA')
   ).length;
 
-  // Fix: Replaced Preventivas with "NOTIFICACIÓN" type count
   const notificacionesTipoCount = notifications.filter(n => 
     (n.tipo || '').toUpperCase().includes('NOTIFICACI')
   ).length;
@@ -98,22 +95,20 @@ export const DashboardPage: React.FC = () => {
 
   // 3. Inspections / De Oficio
   const totalInspections = inspections.length;
-  // NOTE: "De Oficio" card removed from display as requested, but we still calculate it for potential use
   const totalDeOficio = inspections.filter(i => i.esActuacionDeOficio).length;
 
   // 4. Infringed Laws Stats (Infractions)
   const lawStats = infractions.flatMap(i => i.leyes || []).reduce((acc, law) => {
-    // Normalize string to avoid duplicates with casing issues
     const normalizedLaw = law.trim(); 
     acc[normalizedLaw] = (acc[normalizedLaw] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
   
   const sortedLaws = Object.entries(lawStats)
-    .sort((a, b) => (b[1] as number) - (a[1] as number)) // Sort desc by count
-    .slice(0, 8); // Top 8
+    .sort((a, b) => (b[1] as number) - (a[1] as number))
+    .slice(0, 8);
 
-  // 5. Chart Data (By Month/Type)
+  // 5. Chart Data
   const typeCounts = notifications.reduce((acc, curr) => {
     const type = curr.tipo || 'Desconocido';
     acc[type] = (acc[type] || 0) + 1;
@@ -123,7 +118,7 @@ export const DashboardPage: React.FC = () => {
   const chartData = Object.keys(typeCounts).map(k => ({ name: k.replace('NOTIFICACIÓN ', '').replace('AUTO DE ', ''), value: typeCounts[k] }));
   const COLORS = ['#0A4C83', '#4FA7FF', '#93C5FD', '#1E3A8A'];
 
-  // 6. Top Companies (Sorted Descending)
+  // 6. Top Companies
   const companyCounts = notifications.reduce((acc, n) => {
     const name = n.dirigidoA?.trim();
     if (name) {
@@ -133,17 +128,15 @@ export const DashboardPage: React.FC = () => {
   }, {} as Record<string, number>);
 
   const topCompanies = Object.entries(companyCounts)
-    .sort((a, b) => (b[1] as number) - (a[1] as number)) // Sort by count descending
+    .sort((a, b) => (b[1] as number) - (a[1] as number))
     .slice(0, 5);
 
   // 7. Alert Logic
   const upcomingAudiences = notifications.filter(n => {
-    // If it is already notified, remove the alert
     if (n.notificado) return false;
-
     if (n.tipo !== NotifType.AUDIENCIA || !n.fechaAudiencia) return false;
     const days = getDaysDiff(n.fechaAudiencia);
-    return days <= 12 && days >= -1; // Show overdue recently or upcoming
+    return days <= 12 && days >= -1;
   });
 
   // Filter Logic
@@ -164,32 +157,31 @@ export const DashboardPage: React.FC = () => {
   // Edit Logic
   const startEdit = (rec: NotificationRecord) => {
     setEditingId(rec.id);
-    setEditForm(rec);
+    // Deep copy to prevent binding issues
+    setEditForm({ ...rec });
   };
 
   const saveEdit = async () => {
     if (!editingId || !editForm) return;
 
+    setIsSaving(true);
     // Create updated record object
     const updatedRecord = { ...editForm } as NotificationRecord;
-    
-    // Backup current state for rollback
-    const previousNotifications = [...notifications];
-
-    // Optimistic Update: Update UI immediately
-    setNotifications(prev => prev.map(n => n.id === editingId ? updatedRecord : n));
-    setEditingId(null); // Exit edit mode immediately
-    setIsSaving(true);
 
     try {
+      // 1. Intentar actualizar en el servidor (Drive)
       await updateNotification(updatedRecord);
-      // Success - no need to do anything as UI is already updated
+      
+      // 2. Si tiene éxito, recargamos TODOS los datos desde el servidor 
+      // para asegurar que lo que vemos es la verdad del documento.
+      await loadData();
+      
+      // 3. Salir del modo edición solo si tuvo éxito
+      setEditingId(null);
+      setEditForm({});
     } catch (error) {
-      console.error(error);
-      alert("Error al guardar los cambios. Verifique que su Google Apps Script tenga habilitada la función 'updateNotification'.");
-      // Rollback UI
-      setNotifications(previousNotifications);
-      setEditingId(updatedRecord.id); // Re-open edit
+      console.error("Error al guardar en Drive:", error);
+      alert("Error al guardar en Google Drive. Verifique su conexión y que el script esté correctamente configurado.");
     } finally {
       setIsSaving(false);
     }
@@ -200,20 +192,11 @@ export const DashboardPage: React.FC = () => {
       return;
     }
 
-    // Store previous state for rollback
-    const previousNotifications = [...notifications];
-
-    // Optimistic Update: Update UI immediately
-    setNotifications(prev => prev.filter(n => n.id !== id));
-
     try {
       await deleteNotification(id);
-      // We don't need to reload immediately because we already updated the UI.
-      // We can reload silently in the background if we want to sync.
+      await loadData(); // Recargar tras eliminar
     } catch (e) {
       console.error(e);
-      // Revert if error
-      setNotifications(previousNotifications);
       alert("Error al eliminar. Verifique su conexión con Google Sheets.");
     }
   };
@@ -222,11 +205,9 @@ export const DashboardPage: React.FC = () => {
   const handleGenerateReport = () => {
     if (!reportRange.start || !reportRange.end) return alert("Seleccione un rango de fechas");
 
-    // String based comparison is safer for Dates (YYYY-MM-DD)
     const rStart = reportRange.start;
     const rEnd = reportRange.end;
 
-    // Filter Data
     const rNotifs = notifications.filter(n => {
       const d = n.fechaIngreso.split('T')[0];
       return d >= rStart && d <= rEnd;
@@ -242,20 +223,17 @@ export const DashboardPage: React.FC = () => {
       return d >= rStart && d <= rEnd;
     });
 
-    // Calc Stats
     const rTotalNotifs = rNotifs.length;
     const rTotalActas = rInfractions.length;
     const rTotalInspections = rInspections.length;
-    const rTotalDeOficio = rInspections.filter(i => i.esActuacionDeOficio).length; // Added for Report
+    const rTotalDeOficio = rInspections.filter(i => i.esActuacionDeOficio).length;
 
     const rAudiencias = rNotifs.filter(n => n.tipo === NotifType.AUDIENCIA).length;
-    // Update logic for report as well
     const rImputaciones = rNotifs.filter(n => (n.tipo || '').toUpperCase().includes('IMPUTA')).length;
     const rNotificacionesTipo = rNotifs.filter(n => (n.tipo || '').toUpperCase().includes('NOTIFICACI')).length;
     
     const rTotalVencidos = rInfractions.reduce((sum, i) => sum + (i.vencido || 0), 0);
 
-    // Calculate Inspection Laws Breakdown
     const rInspectionLawStats = rInspections.flatMap(i => i.leyes || []).reduce((acc, law) => {
       const normalizedLaw = law.trim(); 
       acc[normalizedLaw] = (acc[normalizedLaw] || 0) + 1;
@@ -265,7 +243,6 @@ export const DashboardPage: React.FC = () => {
     const rSortedInspectionLaws = (Object.entries(rInspectionLawStats) as [string, number][])
       .sort((a, b) => b[1] - a[1]);
 
-    // HTML Content - Redesigned for better layout
     const content = `
       <!DOCTYPE html>
       <html>
@@ -282,8 +259,6 @@ export const DashboardPage: React.FC = () => {
         </style>
       </head>
       <body class="bg-white text-gray-800 p-8 max-w-[210mm] mx-auto">
-        
-        <!-- Header -->
         <div class="border-b-4 border-blue-900 pb-4 mb-6 flex justify-between items-end">
           <div>
             <h1 class="text-2xl font-bold text-blue-900 leading-tight">LEALTAD COMERCIAL</h1>
@@ -295,8 +270,6 @@ export const DashboardPage: React.FC = () => {
              <p class="text-[10px] text-gray-500 font-medium">Emitido: ${new Date().toLocaleDateString()}</p>
           </div>
         </div>
-
-        <!-- Title & Summary -->
         <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6 no-break">
            <h2 class="text-lg font-bold text-blue-900 mb-2">Informe de Gestión Administrativa</h2>
            <p class="text-gray-700 text-xs leading-relaxed text-justify">
@@ -304,8 +277,6 @@ export const DashboardPage: React.FC = () => {
              <strong>${formatDateDisplay(rStart)}</strong> al <strong>${formatDateDisplay(rEnd)}</strong>.
            </p>
         </div>
-
-        <!-- Key Metrics Grid -->
         <div class="mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">Métricas Generales</div>
         <div class="grid grid-cols-3 gap-4 mb-8 mt-4 no-break">
            <div class="bg-white p-3 rounded-lg border border-gray-200 shadow-sm text-center">
@@ -321,10 +292,7 @@ export const DashboardPage: React.FC = () => {
               <div class="text-[9px] text-gray-500 font-semibold uppercase">Total Inspecciones</div>
            </div>
         </div>
-
-        <!-- Breakdown Details -->
         <div class="grid grid-cols-2 gap-8 mb-8">
-            <!-- Col 1: Notification Types -->
             <div class="no-break">
                 <div class="mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">Detalle Notificaciones</div>
                 <div class="space-y-2 mt-3">
@@ -342,8 +310,6 @@ export const DashboardPage: React.FC = () => {
                     </div>
                 </div>
             </div>
-
-            <!-- Col 2: Inspection/Infraction Details -->
             <div class="no-break">
                 <div class="mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">Control y Fiscalización</div>
                  <div class="space-y-2 mt-3">
@@ -358,8 +324,6 @@ export const DashboardPage: React.FC = () => {
                 </div>
             </div>
         </div>
-
-        <!-- Laws Ranking -->
         <div class="no-break">
            <div class="mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 pb-1">Leyes más Controladas (Ranking)</div>
            <div class="mt-4 grid grid-cols-2 gap-3">
@@ -371,8 +335,6 @@ export const DashboardPage: React.FC = () => {
                `).join('') : '<p class="text-xs text-gray-400 italic col-span-2">No se registraron leyes en las inspecciones del período.</p>'}
            </div>
         </div>
-
-        <!-- Footer -->
         <div class="fixed bottom-0 left-0 right-0 p-8 text-center">
             <div class="border-t border-gray-300 pt-2 flex justify-between text-[8px] text-gray-400 uppercase">
                 <span>Departamento Lealtad Comercial</span>
@@ -380,10 +342,7 @@ export const DashboardPage: React.FC = () => {
                 <span>Página 1</span>
             </div>
         </div>
-
-        <script>
-           window.print();
-        </script>
+        <script>window.print();</script>
       </body>
       </html>
     `;
@@ -392,14 +351,9 @@ export const DashboardPage: React.FC = () => {
     if (win) {
       win.document.write(content);
       win.document.close();
-    } else {
-      alert("Por favor habilite las ventanas emergentes para generar el informe.");
     }
     setShowReportModal(false);
   };
-
-
-  // --- RENDER ---
 
   return (
     <div className="space-y-8 animate-fade-in relative">
@@ -415,7 +369,6 @@ export const DashboardPage: React.FC = () => {
                 <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
              </div>
              <p className="text-sm text-gray-500 mb-6">Seleccione el rango de fechas para generar el reporte estadístico oficial en formato PDF.</p>
-             
              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Inicio</label>
@@ -426,7 +379,6 @@ export const DashboardPage: React.FC = () => {
                   <input type="date" className="w-full border rounded-lg p-2.5 bg-gray-50" value={reportRange.end} onChange={e => setReportRange({...reportRange, end: e.target.value})} />
                 </div>
              </div>
-
              <div className="mt-8 flex gap-3">
                 <button onClick={() => setShowReportModal(false)} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-medium hover:bg-gray-50 transition-colors">Cancelar</button>
                 <button onClick={handleGenerateReport} className="flex-1 py-2.5 bg-brand-dark text-white rounded-xl font-medium hover:bg-blue-900 transition-colors shadow-lg shadow-blue-900/20">Imprimir Informe</button>
@@ -445,10 +397,8 @@ export const DashboardPage: React.FC = () => {
          </button>
       </div>
 
-      {/* 1. Main High Level Stats */}
-      {/* Update grid to 4 cols instead of 5 since De Oficio is removed */}
+      {/* Main High Level Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        {/* Notificaciones Totales */}
         <div className="bg-brand-dark text-white p-5 rounded-xl shadow-lg flex items-center justify-between">
           <div>
             <div className="text-3xl font-bold">{totalNotifs}</div>
@@ -456,8 +406,6 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="bg-white/10 p-2 rounded-lg"><FileText size={24} /></div>
         </div>
-        
-        {/* Actas Totales */}
         <div className="bg-white text-brand-dark p-5 rounded-xl shadow border border-gray-100 flex items-center justify-between">
           <div>
             <div className="text-3xl font-bold">{totalActas}</div>
@@ -465,8 +413,6 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="bg-blue-50 text-brand-primary p-2 rounded-lg"><Gavel size={24} /></div>
         </div>
-        
-        {/* Inspecciones Totales */}
         <div className="bg-white text-brand-dark p-5 rounded-xl shadow border border-gray-100 flex items-center justify-between">
           <div>
             <div className="text-3xl font-bold">{totalInspections}</div>
@@ -474,10 +420,6 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div className="bg-blue-50 text-brand-primary p-2 rounded-lg"><ClipboardList size={24} /></div>
         </div>
-
-        {/* Removed De Oficio Card */}
-
-        {/* Alertas */}
         <div className="bg-brand-warning text-white p-5 rounded-xl shadow flex items-center justify-between">
           <div>
             <div className="text-3xl font-bold">{upcomingAudiences.length}</div>
@@ -487,7 +429,7 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Breakdown Subtypes */}
+      {/* Breakdown Subtypes */}
       <div>
         <h3 className="text-lg font-semibold text-gray-700 mb-3 ml-1">Detalle por Tipo</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -580,9 +522,9 @@ export const DashboardPage: React.FC = () => {
                        
                        {editingId === item.id ? (
                          <>
-                           <td className="p-2"><input className="w-20 border rounded p-1" value={editForm.ref} onChange={e => setEditForm({...editForm, ref: e.target.value})} /></td>
-                           <td className="p-2"><input className="w-full border rounded p-1" value={editForm.dirigidoA} onChange={e => setEditForm({...editForm, dirigidoA: e.target.value})} /></td>
-                           <td className="p-2"><input type="date" className="w-full border rounded p-1" value={(editForm.fechaAudiencia || '').split('T')[0]} onChange={e => setEditForm({...editForm, fechaAudiencia: e.target.value})} /></td>
+                           <td className="p-2"><input className="w-20 border rounded p-1 text-xs" value={editForm.ref} onChange={e => setEditForm({...editForm, ref: e.target.value})} /></td>
+                           <td className="p-2"><input className="w-full border rounded p-1 text-xs" value={editForm.dirigidoA} onChange={e => setEditForm({...editForm, dirigidoA: e.target.value})} /></td>
+                           <td className="p-2"><input type="date" className="w-full border rounded p-1 text-xs" value={(editForm.fechaAudiencia || '').split('T')[0]} onChange={e => setEditForm({...editForm, fechaAudiencia: e.target.value})} /></td>
                            <td className="p-2">
                              <select className="border rounded p-1 text-xs" value={editForm.notificador} onChange={e => setEditForm({...editForm, notificador: e.target.value})}>
                                {INSPECTORES.map(i => <option key={i} value={i}>{i}</option>)}
@@ -591,16 +533,26 @@ export const DashboardPage: React.FC = () => {
                            <td className="p-2">
                              <input 
                                type="date" 
-                               className="w-full border border-blue-400 rounded p-1 ring-2 ring-blue-100" 
+                               className="w-full border border-blue-400 rounded p-1 ring-2 ring-blue-100 text-xs" 
                                value={(editForm.notificado || '').split('T')[0]} 
                                onChange={e => setEditForm({...editForm, notificado: e.target.value})} 
                              />
                            </td>
                            <td className="p-2 flex gap-1 justify-center">
-                             <button onClick={saveEdit} className="p-1.5 bg-green-500 text-white rounded hover:bg-green-600 shadow-sm" title="Guardar cambios">
+                             <button 
+                               onClick={saveEdit} 
+                               disabled={isSaving}
+                               className="p-1.5 bg-green-500 text-white rounded hover:bg-green-600 shadow-sm disabled:opacity-50" 
+                               title="Guardar cambios"
+                             >
                                 {isSaving ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>}
                              </button>
-                             <button onClick={() => setEditingId(null)} className="p-1.5 bg-gray-300 text-white rounded hover:bg-gray-400" title="Cancelar">
+                             <button 
+                               onClick={() => setEditingId(null)} 
+                               disabled={isSaving}
+                               className="p-1.5 bg-gray-300 text-white rounded hover:bg-gray-400 disabled:opacity-50" 
+                               title="Cancelar"
+                             >
                                 <X size={16}/>
                              </button>
                            </td>
@@ -631,13 +583,12 @@ export const DashboardPage: React.FC = () => {
            </Card>
         </div>
 
-        {/* Right Column: Charts & Lists */}
+        {/* Right Column */}
         <div className="space-y-6">
           <Card title="Ranking de Leyes Infringidas">
             {sortedLaws.length > 0 ? (
                 <div className="space-y-3">
                     {sortedLaws.map(([law, count], index) => {
-                         // Calculate percentage relative to max for bar width
                          const max = Number(sortedLaws[0]?.[1] || 1);
                          const val = Number(count);
                          const percent = (val / max) * 100;
@@ -648,10 +599,7 @@ export const DashboardPage: React.FC = () => {
                                     <span className="font-bold text-brand-primary">{count}</span>
                                 </div>
                                 <div className="w-full bg-gray-100 rounded-full h-1.5">
-                                    <div 
-                                        className="bg-brand-dark h-1.5 rounded-full" 
-                                        style={{ width: `${percent}%` }}
-                                    ></div>
+                                    <div className="bg-brand-dark h-1.5 rounded-full" style={{ width: `${percent}%` }}></div>
                                 </div>
                             </div>
                          );
@@ -661,15 +609,13 @@ export const DashboardPage: React.FC = () => {
                 <div className="text-center py-8 text-gray-400 text-sm">No hay actas registradas</div>
             )}
           </Card>
-
           <Card title="Gráfico de Notificaciones">
-            {/* Explicit dimensions with minWidth to fix Recharts width(-1) warning */}
             <div style={{ width: '100%', height: 300, minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
                   <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} interval={0} />
                   <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                  <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none'}} />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                     {chartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -679,16 +625,13 @@ export const DashboardPage: React.FC = () => {
               </ResponsiveContainer>
             </div>
           </Card>
-          
           <Card title="Top Empresas Notificadas">
              <ul className="divide-y divide-gray-100 text-sm">
                 {topCompanies.length > 0 ? (
                   topCompanies.map(([company, count], i) => (
                     <li key={i} className="py-3 flex justify-between items-center">
                         <span className="font-medium text-gray-700 truncate w-3/4" title={company}>{company}</span>
-                        <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-500 text-xs font-bold text-brand-dark">
-                            {count}
-                        </span>
+                        <span className="bg-gray-100 px-2 py-0.5 rounded text-xs font-bold text-brand-dark">{count}</span>
                     </li>
                   ))
                 ) : (

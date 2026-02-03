@@ -4,13 +4,9 @@ import { NotificationRecord, InfractionRecord, InspectionRecord, NotifType } fro
 // ==================================================================================
 // CONFIGURACIÓN DE CONEXIÓN
 // ==================================================================================
-// Pega aquí la URL de tu "Web App" de Google Apps Script cuando la hayas desplegado.
-// Si lo dejas vacío, la app funcionará en modo "DEMO" guardando datos en el navegador.
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby6Uj3PSlhrzHTtQFxVybTXDmZCfsE7T-073e3Lp3OkXd1TLVTHPm_q8c1aI1ICDkjz/exec"; 
-// Ejemplo: "https://script.google.com/macros/s/AKfycbx.../exec"
 // ==================================================================================
 
-// Mock DB Keys (Modo Offline)
 const DB_KEYS = {
   NOTIFICATIONS: 'db_notifications',
   INFRACTIONS: 'db_infractions',
@@ -18,21 +14,18 @@ const DB_KEYS = {
   COMPANIES: 'db_companies'
 };
 
-// Helper to simulate delay in Mock mode
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- API HELPER ---
 async function apiRequest(action: string, method: 'GET' | 'POST' = 'GET', body?: any) {
   if (!GOOGLE_SCRIPT_URL) throw new Error("No API URL");
   
-  // Add timestamp to prevent caching in GET requests
   const timestamp = new Date().getTime();
   const url = `${GOOGLE_SCRIPT_URL}?action=${action}&_t=${timestamp}`;
   
   const options: RequestInit = {
     method: method,
     headers: {
-      'Content-Type': 'text/plain;charset=utf-8', // GAS simple request
+      'Content-Type': 'text/plain;charset=utf-8', 
     },
   };
 
@@ -52,7 +45,6 @@ async function apiRequest(action: string, method: 'GET' | 'POST' = 'GET', body?:
 export const getNotifications = async (): Promise<NotificationRecord[]> => {
   if (GOOGLE_SCRIPT_URL) {
     const data = await apiRequest('getNotifications');
-    // Map response to match Types if necessary (GAS returns raw objects)
     return data.map((d: any) => ({
       ...d,
       id: Number(d.id),
@@ -60,7 +52,6 @@ export const getNotifications = async (): Promise<NotificationRecord[]> => {
     }));
   }
   
-  // Fallback Local
   await delay(300);
   const data = localStorage.getItem(DB_KEYS.NOTIFICATIONS);
   return data ? JSON.parse(data) : [];
@@ -71,7 +62,6 @@ export const saveNotification = async (record: Omit<NotificationRecord, 'id' | '
     return await apiRequest('saveNotification', 'POST', record);
   }
 
-  // Fallback Local
   await delay(500);
   const current = await getNotifications();
   const newId = current.length > 0 ? Math.max(...current.map(r => r.id)) + 1 : 1;
@@ -88,56 +78,14 @@ export const saveNotification = async (record: Omit<NotificationRecord, 'id' | '
   return newRecord;
 };
 
-// *** IMPORTANTE PARA EL USUARIO ***
-// Para que 'updateNotification' funcione en Google Sheets, debes agregar este bloque a tu Code.gs:
-/*
-  else if (action === "updateNotification") {
-     result = updateRow(ss, "NOTIFICACIONES", data);
-  }
-  else if (action === "deleteNotification") {
-     result = deleteRow(ss, "NOTIFICACIONES", data.id);
-  }
-
-  // Y esta función auxiliar al final de Code.gs:
-  function updateRow(ss, sheetName, data) {
-    const sheet = ensureSheet(ss, sheetName);
-    const rows = sheet.getDataRange().getValues();
-    const headers = rows[0];
-    
-    // Buscar fila por ID (asumiendo ID en columna 0)
-    let rowIndex = -1;
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][0] == data.id) {
-        rowIndex = i + 1; // +1 porque sheet es base-1
-        break;
-      }
-    }
-    
-    if (rowIndex === -1) return { error: "ID no encontrado" };
-    
-    // Actualizar columnas específicas
-    // headers.indexOf busca la columna correcta
-    const setVal = (header, val) => {
-       const colIdx = headers.indexOf(header);
-       if (colIdx > -1) sheet.getRange(rowIndex, colIdx + 1).setValue(val);
-    };
-
-    if (data.ref) setVal("REF.", data.ref);
-    if (data.dirigidoA) setVal("DIRIGIDO A", data.dirigidoA);
-    if (data.fechaAudiencia) setVal("FECHA AUDIENCIA", new Date(data.fechaAudiencia));
-    if (data.notificador) setVal("NOTIFICADOR", data.notificador);
-    if (data.notificado) setVal("NOTIFICADO", new Date(data.notificado));
-    
-    return { success: true };
-  }
-  
-  // Asegúrate de agregar columnas "DE OFICIO" en Inspecciones para soportar el nuevo campo
-*/
-
 export const updateNotification = async (updatedRecord: NotificationRecord): Promise<void> => {
   if (GOOGLE_SCRIPT_URL) {
-    // Enabled API Call
-    await apiRequest('updateNotification', 'POST', updatedRecord);
+    // IMPORTANTE: Se devuelve la promesa del apiRequest para que el componente 
+    // sepa si realmente se guardó en Drive antes de actualizar la UI local.
+    const result = await apiRequest('updateNotification', 'POST', updatedRecord);
+    if (!result || (result.success === false)) {
+      throw new Error("El servidor no pudo confirmar la actualización.");
+    }
     return;
   }
 
@@ -152,7 +100,6 @@ export const updateNotification = async (updatedRecord: NotificationRecord): Pro
 
 export const deleteNotification = async (id: number): Promise<void> => {
   if (GOOGLE_SCRIPT_URL) {
-    // Requires backend support for 'deleteNotification' action
     await apiRequest('deleteNotification', 'POST', { id });
     return;
   }
@@ -175,7 +122,6 @@ export const getInfractions = async (): Promise<InfractionRecord[]> => {
        decomiso: Number(d.decomiso),
        diasDescargo: Number(d.diasDescargo),
        leyes: typeof d.leyes === 'string' ? d.leyes.split(', ') : d.leyes,
-       // Map fechaActa if it comes from the sheet (you need to add 'FECHA ACTA' to header in GAS)
     }));
   }
 
@@ -255,7 +201,6 @@ export const getCompanies = async (): Promise<string[]> => {
   return data ? JSON.parse(data) : [];
 };
 
-// Internal local helper
 const addCompany = (name: string) => {
   if (!name) return;
   const current = localStorage.getItem(DB_KEYS.COMPANIES);
@@ -266,18 +211,12 @@ const addCompany = (name: string) => {
   }
 };
 
-// --- Initial Seed Data (Only for Mock) ---
 export const seedData = () => {
-  if (GOOGLE_SCRIPT_URL) return; // Don't seed if using API
-  
+  if (GOOGLE_SCRIPT_URL) return; 
   if (!localStorage.getItem(DB_KEYS.NOTIFICATIONS)) {
     const today = new Date();
     const future = new Date();
     future.setDate(today.getDate() + 5); 
-
-    const farFuture = new Date();
-    farFuture.setDate(today.getDate() + 20);
-
     const seed: NotificationRecord[] = [
       {
         id: 1,
@@ -292,23 +231,9 @@ export const seedData = () => {
         fechaAudiencia: future.toISOString().split('T')[0],
         notificador: "Ponce",
         notificado: today.toISOString().split('T')[0]
-      },
-      {
-        id: 2,
-        fechaIngreso: "2024-05-10",
-        ref: "EXP-002",
-        anio: 2024,
-        area: "DEPARTAMENTO JURIDICO",
-        departamento: "Valle Viejo",
-        tipo: "AUDIENCIA", 
-        dirigidoA: "Electro Hogar",
-        contra: "Maria Lopez",
-        fechaAudiencia: farFuture.toISOString().split('T')[0],
-        notificador: "Molina"
       }
     ];
     localStorage.setItem(DB_KEYS.NOTIFICATIONS, JSON.stringify(seed));
     addCompany("Supermercado X");
-    addCompany("Electro Hogar");
   }
 };
