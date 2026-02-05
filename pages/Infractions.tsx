@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Input, Select, Button, Label } from '../components/UI';
 import { DEPARTAMENTOS, INSPECTORES, LEYES_OPTIONS, InfractionRecord } from '../types';
-import { saveInfraction, getInfractions, getCompanies } from '../services/dataService';
+import { saveInfraction, getInfractions, getCompanies, getCustomLaws, addCustomLaw } from '../services/dataService';
 import { Loader2, CheckCircle, Calculator, Plus, CalendarClock } from 'lucide-react';
 
 // Hardcoded Holidays for Argentina (2024-2025)
@@ -41,7 +41,7 @@ export const InfractionsPage: React.FC = () => {
     fechaActa: new Date().toISOString().split('T')[0] // Defaults to YYYY-MM-DD
   });
 
-  // Calculate next ID on mount
+  // Load Initial Data
   useEffect(() => {
     const init = async () => {
       const data = await getInfractions();
@@ -49,8 +49,9 @@ export const InfractionsPage: React.FC = () => {
       setNextId(maxId + 1);
 
       try {
-        const comps = await getCompanies();
+        const [comps, laws] = await Promise.all([getCompanies(), getCustomLaws()]);
         setCompanies(comps);
+        setCustomLaws(laws);
       } catch (e) { console.error(e); }
     };
     init();
@@ -66,14 +67,20 @@ export const InfractionsPage: React.FC = () => {
     setFormData(prev => ({ ...prev, leyes: newLaws }));
   };
 
-  const handleAddCustomLaw = (e: React.MouseEvent) => {
+  const handleAddCustomLaw = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!newLawInput.trim()) return;
 
     const val = newLawInput.trim().toUpperCase();
+    
+    // Guardar permanentemente
+    await addCustomLaw(val);
+    
+    // Actualizar estado local para visualización inmediata
     if (!customLaws.includes(val) && !LEYES_OPTIONS.includes(val)) {
-      setCustomLaws([...customLaws, val]);
+      setCustomLaws(prev => [...prev, val].sort());
     }
+    
     if (!formData.leyes?.includes(val)) {
       handleLawToggle(val);
     }
@@ -85,8 +92,6 @@ export const InfractionsPage: React.FC = () => {
     const hasArt5 = formData.leyes?.some(l => l.includes("ART. 5") || l.includes("ART. N° 5"));
     const businessDaysToAdd = hasArt5 ? 5 : 10;
     
-    // 1. Get Start Date (Strictly from input string YYYY-MM-DD)
-    // If empty, fallback to local today string
     let startStr = formData.fechaActa;
     if (!startStr) {
        const today = new Date();
@@ -96,25 +101,15 @@ export const InfractionsPage: React.FC = () => {
        startStr = `${y}-${m}-${d}`;
     }
 
-    // 2. Create Cursor Date at 00:00:00 Local Time
     const [sy, sm, sd] = startStr.split('-').map(Number);
     const cursor = new Date(sy, sm - 1, sd); 
 
     let daysAdded = 0;
-    
-    // 3. Loop business days
-    // Limit loop to prevent infinite crash (e.g. max 60 real days)
     let safetyCounter = 0;
     while (daysAdded < businessDaysToAdd && safetyCounter < 60) {
       safetyCounter++;
-      
-      // Add 1 day
       cursor.setDate(cursor.getDate() + 1);
-      
-      const dayOfWeek = cursor.getDay(); // 0 = Sunday, 6 = Saturday
-      
-      // Format current cursor to YYYY-MM-DD for holiday check
-      // Use local getters to avoid UTC shift
+      const dayOfWeek = cursor.getDay();
       const cy = cursor.getFullYear();
       const cm = String(cursor.getMonth() + 1).padStart(2, '0');
       const cd = String(cursor.getDate()).padStart(2, '0');
@@ -128,7 +123,6 @@ export const InfractionsPage: React.FC = () => {
       }
     }
 
-    // 4. Return Final Date as YYYY-MM-DD String
     const fy = cursor.getFullYear();
     const fm = String(cursor.getMonth() + 1).padStart(2, '0');
     const fd = String(cursor.getDate()).padStart(2, '0');
@@ -176,7 +170,7 @@ export const InfractionsPage: React.FC = () => {
          estado: 'Pendiente',
          numeroDigital: '',
          ref: '',
-         fechaActa: new Date().toISOString().split('T')[0], // Reset to today for next entry
+         fechaActa: new Date().toISOString().split('T')[0],
          razonSocial: '',
          fantasia: '',
          cuil: ''
@@ -190,9 +184,9 @@ export const InfractionsPage: React.FC = () => {
   };
 
   const deadlines = calculateDeadlines();
-  const allLaws = [...LEYES_OPTIONS, ...customLaws];
+  // Unificar leyes base con las personalizadas persistentes
+  const allLaws = Array.from(new Set([...LEYES_OPTIONS, ...customLaws])).sort();
 
-  // Helper to display YYYY-MM-DD as DD/MM/YYYY without timezone conversion
   const formatDateDisplay = (ymd: string) => {
       const [y, m, d] = ymd.split('-');
       return `${d}/${m}/${y}`;

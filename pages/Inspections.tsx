@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Input, Select, Button, Label } from '../components/UI';
 import { DEPARTAMENTOS, INSPECTORES, LEYES_OPTIONS, InspectionRecord } from '../types';
-import { saveInspection, getInspections, getCompanies } from '../services/dataService';
+import { saveInspection, getInspections, getCompanies, getCustomLaws, addCustomLaw } from '../services/dataService';
 import { CheckCircle, ClipboardList, Plus } from 'lucide-react';
 
 export const InspectionsPage: React.FC = () => {
@@ -28,7 +28,7 @@ export const InspectionsPage: React.FC = () => {
     cuil: ''
   });
 
-  // Calculate next ID
+  // Load Data on Mount
   useEffect(() => {
     const init = async () => {
       const data = await getInspections();
@@ -36,8 +36,9 @@ export const InspectionsPage: React.FC = () => {
       setNextId(maxId + 1);
 
       try {
-        const comps = await getCompanies();
+        const [comps, laws] = await Promise.all([getCompanies(), getCustomLaws()]);
         setCompanies(comps);
+        setCustomLaws(laws);
       } catch (e) { console.error(e); }
     };
     init();
@@ -49,7 +50,6 @@ export const InspectionsPage: React.FC = () => {
     
     setLoading(true);
 
-    // Derive boolean flag from selected laws for Dashboard compatibility
     const isOficio = formData.leyes?.includes("ACTUACIÓN DE OFICIO");
     const payload = {
         ...formData,
@@ -82,13 +82,18 @@ export const InspectionsPage: React.FC = () => {
     setFormData(prev => ({ ...prev, leyes: newLaws }));
   };
 
-  const handleAddCustomLaw = (e: React.MouseEvent) => {
+  const handleAddCustomLaw = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!newLawInput.trim()) return;
 
     const val = newLawInput.trim().toUpperCase();
+    
+    // Guardar permanentemente
+    await addCustomLaw(val);
+    
+    // Actualizar estado local
     if (!customLaws.includes(val) && !LEYES_OPTIONS.includes(val)) {
-      setCustomLaws([...customLaws, val]);
+      setCustomLaws(prev => [...prev, val].sort());
     }
     
     if (!formData.leyes?.includes(val)) {
@@ -97,8 +102,12 @@ export const InspectionsPage: React.FC = () => {
     setNewLawInput('');
   };
 
-  // Prepend Special Option
-  const allLaws = ["ACTUACIÓN DE OFICIO", ...LEYES_OPTIONS, ...customLaws];
+  // Prepend Special Option y unir con leyes personalizadas
+  const allLaws = Array.from(new Set(["ACTUACIÓN DE OFICIO", ...LEYES_OPTIONS, ...customLaws])).sort((a,b) => {
+    if (a === "ACTUACIÓN DE OFICIO") return -1;
+    if (b === "ACTUACIÓN DE OFICIO") return 1;
+    return a.localeCompare(b);
+  });
 
   return (
     <div className="space-y-6">

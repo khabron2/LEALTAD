@@ -11,7 +11,8 @@ const DB_KEYS = {
   NOTIFICATIONS: 'db_notifications',
   INFRACTIONS: 'db_infractions',
   INSPECTIONS: 'db_inspections',
-  COMPANIES: 'db_companies'
+  COMPANIES: 'db_companies',
+  CUSTOM_LAWS: 'db_custom_laws'
 };
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -45,7 +46,6 @@ async function apiRequest(action: string, method: 'GET' | 'POST' = 'GET', body?:
 export const getNotifications = async (): Promise<NotificationRecord[]> => {
   if (GOOGLE_SCRIPT_URL) {
     const data = await apiRequest('getNotifications');
-    // Mapeo exhaustivo para manejar diferencias de mayúsculas/minúsculas de Drive
     return data.map((d: any) => ({
       id: Number(d.id || d.ID),
       fechaIngreso: d.fechaIngreso || d['FECHA INGRESO'] || '',
@@ -90,7 +90,6 @@ export const saveNotification = async (record: Omit<NotificationRecord, 'id' | '
 
 export const updateNotification = async (updatedRecord: NotificationRecord): Promise<void> => {
   if (GOOGLE_SCRIPT_URL) {
-    // Enviamos el objeto con las claves originales y en mayúsculas para máxima compatibilidad con el Script
     const payload = {
       ...updatedRecord,
       'ID': updatedRecord.id,
@@ -168,6 +167,9 @@ export const saveInfraction = async (record: Omit<InfractionRecord, 'id' | 'fech
   const updated = [...current, newRecord];
   localStorage.setItem(DB_KEYS.INFRACTIONS, JSON.stringify(updated));
   addCompany(record.razonSocial);
+  if (record.leyes) {
+    record.leyes.forEach(law => addCustomLaw(law));
+  }
   return newRecord;
 };
 
@@ -206,6 +208,9 @@ export const saveInspection = async (record: Omit<InspectionRecord, 'id'>): Prom
   const updated = [...current, newRecord];
   localStorage.setItem(DB_KEYS.INSPECTIONS, JSON.stringify(updated));
   addCompany(record.razonSocial);
+  if (record.leyes) {
+    record.leyes.forEach(law => addCustomLaw(law));
+  }
   return newRecord;
 };
 
@@ -213,7 +218,11 @@ export const saveInspection = async (record: Omit<InspectionRecord, 'id'>): Prom
 
 export const getCompanies = async (): Promise<string[]> => {
   if (GOOGLE_SCRIPT_URL) {
-    return await apiRequest('getCompanies');
+    try {
+      return await apiRequest('getCompanies');
+    } catch (e) {
+      console.warn("Script error, falling back to local companies", e);
+    }
   }
   
   await delay(100);
@@ -228,6 +237,46 @@ const addCompany = (name: string) => {
   if (!list.includes(name)) {
     const updated = [...list, name].sort();
     localStorage.setItem(DB_KEYS.COMPANIES, JSON.stringify(updated));
+  }
+};
+
+// --- Custom Laws ---
+
+export const getCustomLaws = async (): Promise<string[]> => {
+  // Cargar siempre primero lo local
+  let localLaws: string[] = [];
+  const localData = localStorage.getItem(DB_KEYS.CUSTOM_LAWS);
+  if (localData) localLaws = JSON.parse(localData);
+
+  if (GOOGLE_SCRIPT_URL) {
+    try {
+      const serverLaws = await apiRequest('getCustomLaws');
+      if (Array.isArray(serverLaws)) {
+        // Fusionar local con servidor evitando duplicados
+        return Array.from(new Set([...localLaws, ...serverLaws]));
+      }
+    } catch (e) {
+      console.warn("No se pudieron cargar leyes del servidor, usando locales.");
+    }
+  }
+  
+  return localLaws;
+};
+
+export const addCustomLaw = async (law: string) => {
+  if (!law || law === "ACTUACIÓN DE OFICIO") return;
+  
+  // Persistencia local inmediata
+  const current = localStorage.getItem(DB_KEYS.CUSTOM_LAWS);
+  const list: string[] = current ? JSON.parse(current) : [];
+  if (!list.includes(law)) {
+    const updated = [...list, law].sort();
+    localStorage.setItem(DB_KEYS.CUSTOM_LAWS, JSON.stringify(updated));
+    
+    // Si hay script, intentamos notificarlo (opcional)
+    if (GOOGLE_SCRIPT_URL) {
+      try { await apiRequest('saveCustomLaw', 'POST', { law }); } catch(e) {}
+    }
   }
 };
 

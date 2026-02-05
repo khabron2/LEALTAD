@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, Input, Select, Button, Label } from '../components/UI';
 import { Area, DEPARTAMENTOS, NotifType, INSPECTORES, NotificationRecord } from '../types';
@@ -172,13 +173,6 @@ export const NotificationsPage: React.FC = () => {
               options={INSPECTORES} 
               value={formData.notificador}
               onChange={e => handleChange('notificador', e.target.value)}
-            />
-            
-            <Input 
-              label="Fecha de Notificación" 
-              type="date"
-              value={formData.notificado || ''}
-              onChange={e => handleChange('notificado', e.target.value)}
             />
           </div>
         </Card>

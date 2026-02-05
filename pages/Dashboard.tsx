@@ -133,6 +133,8 @@ export const DashboardPage: React.FC = () => {
 
   // 7. Alert Logic
   const upcomingAudiences = notifications.filter(n => {
+    // Note: Since we removed the UI for 'notificado', users can't mark them as notified anymore
+    // but we'll keep the logic in case they were already marked in the data source.
     if (n.notificado && n.notificado !== '') return false;
     if (n.tipo !== NotifType.AUDIENCIA || !n.fechaAudiencia) return false;
     const days = getDaysDiff(n.fechaAudiencia);
@@ -173,7 +175,6 @@ export const DashboardPage: React.FC = () => {
       await updateNotification(updatedRecord);
       
       // 2. Si tiene éxito, recargamos TODOS los datos desde el servidor 
-      // para asegurar que lo que vemos es la verdad del documento.
       await loadData();
       
       // 3. Salir del modo edición solo si tuvo éxito
@@ -181,7 +182,7 @@ export const DashboardPage: React.FC = () => {
       setEditForm({});
     } catch (error) {
       console.error("Error al guardar en Drive:", error);
-      alert("Error al guardar en Google Drive. Verifique que el campo de fecha tenga un valor válido.");
+      alert("Error al guardar en Google Drive.");
     } finally {
       setIsSaving(false);
     }
@@ -511,7 +512,6 @@ export const DashboardPage: React.FC = () => {
                      <th className="p-3">Empresa</th>
                      <th className="p-3">Audiencia</th>
                      <th className="p-3">Notificador</th>
-                     <th className="p-3">Fecha Notif.</th>
                      <th className="p-3 rounded-tr-lg text-center">Acción</th>
                    </tr>
                  </thead>
@@ -529,14 +529,6 @@ export const DashboardPage: React.FC = () => {
                              <select className="border rounded p-1 text-xs" value={editForm.notificador} onChange={e => setEditForm({...editForm, notificador: e.target.value})}>
                                {INSPECTORES.map(i => <option key={i} value={i}>{i}</option>)}
                              </select>
-                           </td>
-                           <td className="p-2">
-                             <input 
-                               type="date" 
-                               className="w-full border border-blue-400 rounded p-1 ring-2 ring-blue-100 text-xs" 
-                               value={(editForm.notificado || '').split('T')[0]} 
-                               onChange={e => setEditForm({...editForm, notificado: e.target.value})} 
-                             />
                            </td>
                            <td className="p-2 flex gap-1 justify-center">
                              <button 
@@ -563,7 +555,6 @@ export const DashboardPage: React.FC = () => {
                            <td className="p-3">{item.dirigidoA}</td>
                            <td className="p-3 text-gray-500">{formatDateDisplay(item.fechaAudiencia)}</td>
                            <td className="p-3">{item.notificador}</td>
-                           <td className="p-3 text-gray-500 italic">{formatDateDisplay(item.notificado)}</td>
                            <td className="p-3 flex gap-2 justify-center">
                              <button onClick={() => startEdit(item)} className="p-1.5 text-brand-primary hover:bg-blue-50 rounded transition-colors" title="Editar">
                                <Edit2 size={16} />
